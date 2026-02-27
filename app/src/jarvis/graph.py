@@ -52,15 +52,15 @@ def build_graph(
     model = ChatOpenAI(model=model_name, temperature=0, streaming=True).bind_tools(ALL_TOOLS)
     tool_node = ToolNode(ALL_TOOLS)
 
-    def assistant_node(state: GraphState) -> dict:
+    async def assistant_node(state: GraphState) -> dict:
         trimmed = _trim_and_prepend_system(
             state["messages"], system_prompt, history_window,
         )
-        response = model.invoke(trimmed)
+        response = await model.ainvoke(trimmed)
         return {"messages": [response]}
 
-    def tools_node(state: GraphState) -> dict:
-        result = tool_node.invoke({"messages": state["messages"]})
+    async def tools_node(state: GraphState) -> dict:
+        result = await tool_node.ainvoke({"messages": state["messages"]})
         return {
             "messages": result["messages"],
             "tool_steps": state.get("tool_steps", 0) + 1,

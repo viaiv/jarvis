@@ -13,6 +13,7 @@ dependencies = [
   "langchain-openai>=0.3.0",
   "langgraph>=1.0.0",
   "langgraph-checkpoint-sqlite>=2.0.0",
+  "aiosqlite>=0.20.0",
   "python-dotenv>=1.0.0",
   "rich>=13.0.0",
 ]
@@ -21,7 +22,7 @@ dependencies = [
 jarvis-chat = "jarvis.cli:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

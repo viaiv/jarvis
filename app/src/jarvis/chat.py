@@ -1,4 +1,4 @@
-from typing import Any, Generator, List
+from typing import Any, AsyncGenerator, List
 
 from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
 from langgraph.errors import GraphRecursionError
@@ -31,7 +31,7 @@ def _get_last_ai_message(messages: List[BaseMessage]) -> AIMessage | None:
     return None
 
 
-def invoke_chat(
+async def invoke_chat(
     graph,
     user_input: str,
     max_tool_steps: int,
@@ -40,7 +40,7 @@ def invoke_chat(
     recursion_limit = max(6, 2 * max_tool_steps + 4)
 
     try:
-        result = graph.invoke(
+        result = await graph.ainvoke(
             {
                 "messages": [HumanMessage(content=user_input)],
                 "tool_steps": 0,
@@ -68,12 +68,12 @@ def invoke_chat(
     return answer
 
 
-def stream_chat(
+async def stream_chat(
     graph,
     user_input: str,
     max_tool_steps: int,
     thread_id: str,
-) -> Generator[str, None, None]:
+) -> AsyncGenerator[str, None]:
     """Stream tokens from the graph one by one."""
     recursion_limit = max(6, 2 * max_tool_steps + 4)
 
@@ -81,7 +81,7 @@ def stream_chat(
     hit_tool_limit = False
 
     try:
-        for chunk, metadata in graph.stream(
+        async for chunk, metadata in graph.astream(
             {
                 "messages": [HumanMessage(content=user_input)],
                 "tool_steps": 0,
