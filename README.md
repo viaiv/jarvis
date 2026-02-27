@@ -13,10 +13,9 @@ Arquitetura atual do backend (`backend/src/jarvis/`):
 - `cli.py`: interface de linha de comando e loop interativo.
 - `config.py`: leitura e validacao de configuracoes do `.env`.
 - `tools.py`: ferramentas disponiveis para o agente.
-- `graph.py`: definicao e compilacao do fluxo no LangGraph.
-- `chat.py`: invocacao do grafo e tratamento de historico.
-- `memory.py`: persistencia de historico por sessao.
-- `api.py`: API REST com FastAPI.
+- `graph.py`: definicao e compilacao do fluxo no LangGraph + sanitizacao de historico.
+- `chat.py`: streaming de eventos tipados (token, tool_start, tool_end) e invocacao do grafo.
+- `api.py`: API REST (HTTP + WebSocket) com FastAPI.
 
 ## Setup rapido
 
@@ -73,7 +72,6 @@ Configurar memoria curta e limite de tools no `.env`:
 ```env
 JARVIS_HISTORY_WINDOW=3
 JARVIS_MAX_TOOL_STEPS=5
-JARVIS_MEMORY_FILE=.jarvis_memory.json
 JARVIS_SESSION_ID=default
 JARVIS_PERSIST_MEMORY=true
 ```
@@ -84,7 +82,6 @@ Ou sobrescrever por comando:
 jarvis-chat --max-turns 2
 jarvis-chat --max-tool-steps 3
 jarvis-chat --session-id estudo
-jarvis-chat --memory-file ./data/memoria.json
 jarvis-chat --no-memory
 ```
 
@@ -102,10 +99,12 @@ jarvis-chat "Que horas sao em America/Sao_Paulo?"
 
 ### Memoria persistente
 
-- A conversa e salva por sessao em arquivo JSON.
+- A conversa e salva por sessao em SQLite (`.jarvis.db`) via checkpointer do LangGraph.
 - Ao reiniciar o app, o historico da sessao e recarregado automaticamente.
 - A janela curta (`JARVIS_HISTORY_WINDOW`) limita o contexto enviado ao modelo,
-  mas o historico completo continua salvo no arquivo.
+  mas o historico completo continua salvo no banco.
+- `_sanitize_tool_sequences` garante que o historico trimado nao contenha
+  sequencias incompletas de tool calls (evita erros da API da OpenAI).
 
 ## Frontend
 
@@ -118,6 +117,21 @@ npm run dev
 ```
 
 O dev server sobe em `http://localhost:5173`.
+
+### Streaming via WebSocket
+
+O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
+
+- `token`: texto incremental da resposta.
+- `tool_start`: indica que uma ferramenta foi chamada (exibe indicador visual).
+- `tool_end`: resultado da ferramenta (atualiza indicador com output).
+- `end`: fim da resposta.
+
+Arquivos principais:
+
+- `src/App.tsx`: componente principal com chat e renderizacao de tool calls.
+- `src/useChat.ts`: hook de conexao WebSocket e gerenciamento de mensagens.
+- `src/types.ts`: tipos `ChatMessage`, `ToolCall`, `ConnectionStatus`.
 
 ## Trilha
 

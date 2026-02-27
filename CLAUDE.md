@@ -53,6 +53,24 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - Se há `tool_calls` na resposta e não atingiu `max_tool_steps`, vai para `tools`
 - O nó `tools` executa as ferramentas e incrementa o contador
 - Sem `tool_calls` → encerra
+- `_sanitize_tool_sequences` valida consistência de tool calls no histórico antes de enviar ao modelo
+- `_trim_and_prepend_system` aplica janela de histórico + sanitização + system prompt
+
+## Streaming e Protocolo WebSocket
+
+`stream_chat()` retorna `AsyncGenerator[dict, None]` com eventos tipados:
+
+```jsonc
+{"type": "token", "content": "texto"}                                    // texto incremental
+{"type": "tool_start", "name": "calculator", "call_id": "call_xxx"}      // início de tool call
+{"type": "tool_end", "name": "calculator", "call_id": "call_xxx", "output": "4"}  // resultado
+{"type": "end"}                                                          // fim (emitido pela API)
+{"type": "error", "content": "..."}                                      // erro (emitido pela API)
+```
+
+- O WS handler (`api.py`) repassa os dicts diretamente ao frontend
+- A CLI filtra apenas eventos `type=token` para renderizar Markdown no terminal
+- O frontend exibe indicadores visuais de tool calls antes da resposta de texto
 
 ## Estilo de Código
 
@@ -74,6 +92,7 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - NUNCA adicionar `Co-authored-by` em mensagens de commit
 - NUNCA commitar `.env` — contém `OPENAI_API_KEY`
 - O arquivo `.jarvis.db` é criado em runtime para persistência de memória
+- **ANTES de cada commit**, SEMPRE atualizar a documentação (CLAUDE.md, backend/CLAUDE.md, README.md) para refletir as mudanças feitas no código. Docs desatualizadas são tratadas como bug.
 - Ver @README.md para overview e instruções de uso
 - Ver @trilha/README.md para roadmap das etapas de aprendizado
 - Ver @backend/pyproject.toml para dependências e entry points
