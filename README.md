@@ -109,6 +109,7 @@ jarvis-chat "Que horas sao em America/Sao_Paulo?"
 ## Frontend
 
 Interface web para o assistente, construida com React + Vite + TypeScript.
+Design escuro com estetica de command interface (cyan accent, tipografia Syne/Outfit/JetBrains Mono).
 
 ```bash
 cd frontend
@@ -123,15 +124,25 @@ O dev server sobe em `http://localhost:5173`.
 O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
 
 - `token`: texto incremental da resposta.
-- `tool_start`: indica que uma ferramenta foi chamada (exibe indicador visual).
-- `tool_end`: resultado da ferramenta (atualiza indicador com output).
+- `tool_start`: indica que uma ferramenta foi chamada (exibe indicador visual com dot pulsante).
+- `tool_end`: resultado da ferramenta (atualiza indicador com output e dot verde).
 - `end`: fim da resposta.
 
-Arquivos principais:
+### Design
 
-- `src/App.tsx`: componente principal com chat e renderizacao de tool calls.
+- Paleta escura com base navy (#050a14) e accent cyan (#00d4ff).
+- Mensagens do usuario: cards com fundo cyan translucido, alinhados a direita.
+- Mensagens do assistente: texto com borda esquerda cyan, sem card de fundo.
+- Tool calls: pills monospace inline com indicador de status (pulsando/concluido).
+- Input: estilo command prompt com prefixo `>` e glow on focus.
+- Fontes: Syne (display), Outfit (body), JetBrains Mono (code/tools) via Google Fonts.
+
+### Arquivos
+
+- `src/App.tsx`: componente principal com chat, tool calls e empty state.
 - `src/useChat.ts`: hook de conexao WebSocket e gerenciamento de mensagens.
 - `src/types.ts`: tipos `ChatMessage`, `ToolCall`, `ConnectionStatus`.
+- `src/index.css`: tema customizado (Tailwind v4 @theme), animacoes e prose overrides.
 
 ## Trilha
 
