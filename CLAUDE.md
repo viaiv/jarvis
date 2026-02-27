@@ -9,16 +9,17 @@ Projeto educacional para aprender tool calling, grafos de agentes e memória per
 - **LLM Framework**: LangChain + LangGraph
 - **Modelo padrão**: gpt-4.1-mini (configurável via `.env`)
 - **Persistência**: SQLite via `langgraph-checkpoint-sqlite`
+- **Auth**: JWT stateless (PyJWT + bcrypt), SQLite separado para auth
 - **CLI**: argparse + Rich (streaming com Markdown)
 - **API**: FastAPI + Uvicorn
-- **Frontend**: React + Vite + TypeScript
+- **Frontend**: React + Vite + TypeScript + React Router v7
 - **Testes**: pytest + pytest-asyncio
 
 Mapa de diretórios:
 - `backend/src/jarvis/` — Código principal do assistente (Python/FastAPI)
 - `backend/tests/` — Testes unitários
 - `frontend/` — Interface web (React + Vite + TypeScript)
-- `trilha/` — Documentação incremental da trilha de aprendizado (etapas 00–05)
+- `trilha/` — Documentação incremental da trilha de aprendizado (etapas 00–06)
 
 ## Comandos Essenciais
 
@@ -71,6 +72,33 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - O WS handler (`api.py`) repassa os dicts diretamente ao frontend
 - A CLI filtra apenas eventos `type=token` para renderizar Markdown no terminal
 - O frontend exibe indicadores visuais de tool calls antes da resposta de texto
+
+## Autenticacao e Multi-usuario
+
+- JWT stateless com access token (30min) e refresh token (7 dias)
+- Banco auth separado (`.jarvis-auth.db`) via aiosqlite — tabelas: `users`, `global_config`, `user_config`
+- Senhas com bcrypt (hash direto, sem passlib)
+- PyJWT: `sub` claim e string (`str(user_id)` / `int(data["sub"])`)
+- Endpoints: `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`
+- WebSocket auth via query param `?token=<jwt>`
+- Thread namespace: `thread_id = f"{user_id}:{provided_thread}"` — isola conversas por usuario
+- Registro apenas via admin (sem self-registration)
+- CLI sem auth (backward compatible)
+
+## Admin Panel
+
+### Backend (`/admin/*`)
+- Protegido por `dependencies=[Depends(get_admin_user)]`
+- Users CRUD: `GET/POST /admin/users`, `GET/PUT/DELETE /admin/users/{id}`, `PUT /admin/users/{id}/password`
+- Config: `GET/PUT /admin/config` (global), `GET/PUT /admin/users/{id}/config` (por usuario)
+- Logs: `GET /admin/logs` (lista threads paginada), `GET /admin/logs/{thread_id}` (mensagens)
+- `graph_cache.py`: LRU cache de grafos compilados por (model_name, system_prompt, history_window)
+
+### Frontend (`/admin/*`)
+- Rota protegida por `AdminRoute` (role=admin)
+- Layout com sidebar (Usuarios, Logs, Config) + link para voltar ao chat
+- `adminApi.ts`: client tipado para todos os endpoints admin
+- Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `ConfigPage` (editor global/por usuario)
 
 ## Estilo de Código
 

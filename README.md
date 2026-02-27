@@ -11,11 +11,18 @@ Projeto de estudo para aprender `LangChain` e `LangGraph` por etapas.
 Arquitetura atual do backend (`backend/src/jarvis/`):
 
 - `cli.py`: interface de linha de comando e loop interativo.
-- `config.py`: leitura e validacao de configuracoes do `.env`.
+- `config.py`: leitura e validacao de configuracoes do `.env`, campos auth/JWT.
 - `tools.py`: ferramentas disponiveis para o agente.
 - `graph.py`: definicao e compilacao do fluxo no LangGraph + sanitizacao de historico.
+- `graph_cache.py`: LRU cache de grafos compilados por config.
 - `chat.py`: streaming de eventos tipados (token, tool_start, tool_end) e invocacao do grafo.
-- `api.py`: API REST (HTTP + WebSocket) com FastAPI.
+- `api.py`: API REST (HTTP + WebSocket) com FastAPI, auth JWT.
+- `auth.py`: hash bcrypt, JWT encode/decode.
+- `db.py`: banco auth (aiosqlite) com CRUD users e config.
+- `deps.py`: FastAPI dependencies para autenticacao.
+- `admin.py`: APIRouter `/admin` com CRUD usuarios, config e logs.
+- `logs.py`: extracao read-only de threads e mensagens do checkpoint.
+- `schemas.py`: Pydantic models para auth, admin e logs.
 
 ## Setup rapido
 
@@ -44,7 +51,38 @@ cd frontend && npm install
 cp backend/.env.example .env
 ```
 
-Edite `.env` e preencha `OPENAI_API_KEY`.
+Edite `.env` e preencha as variaveis necessarias:
+
+```env
+OPENAI_API_KEY=sk-...
+JWT_SECRET=uma-chave-secreta-forte
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=senha-do-admin
+```
+
+## Autenticacao
+
+A API usa JWT stateless para autenticacao. No primeiro boot, um usuario admin e criado automaticamente com as credenciais definidas no `.env`.
+
+- `POST /auth/login` — retorna access + refresh token
+- `POST /auth/refresh` — renova access token
+- `GET /auth/me` — dados do usuario autenticado
+
+O WebSocket recebe o token via query param: `/ws?token=<jwt>`.
+
+Registro de novos usuarios e feito apenas pelo admin via painel administrativo.
+
+A CLI continua funcionando sem autenticacao (backward compatible).
+
+## Admin Panel
+
+Acessivel em `/admin` para usuarios com role `admin`.
+
+- **Usuarios**: CRUD completo (criar, editar, desativar, resetar senha).
+- **Logs**: visualizar conversas de qualquer usuario com filtro e paginacao.
+- **Config**: editar configuracao global e por usuario (model, system prompt, history window, max tool steps).
+
+Endpoints do backend em `/admin/*`, protegidos por `get_admin_user` dependency.
 
 ## Chat atual (Etapa 5)
 
@@ -141,8 +179,19 @@ O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
 
 - `src/App.tsx`: componente principal com chat, tool calls e empty state.
 - `src/useChat.ts`: hook de conexao WebSocket e gerenciamento de mensagens.
-- `src/types.ts`: tipos `ChatMessage`, `ToolCall`, `ConnectionStatus`.
+- `src/types.ts`: tipos de chat, auth e admin.
 - `src/index.css`: tema customizado (Tailwind v4 @theme), animacoes e prose overrides.
+- `src/routes.tsx`: rotas da aplicacao (login, chat, admin).
+- `src/auth/AuthContext.tsx`: provider de autenticacao com login/logout e auto-refresh.
+- `src/auth/ProtectedRoute.tsx`: redirect para login se nao autenticado.
+- `src/auth/AdminRoute.tsx`: redirect se nao admin.
+- `src/auth/authFetch.ts`: wrapper fetch com Bearer token e auto-refresh em 401.
+- `src/pages/LoginPage.tsx`: tela de login.
+- `src/layouts/AdminLayout.tsx`: layout com sidebar para area admin.
+- `src/pages/admin/UsersPage.tsx`: CRUD de usuarios.
+- `src/pages/admin/LogsPage.tsx`: viewer de conversas.
+- `src/pages/admin/ConfigPage.tsx`: editor de config global e por usuario.
+- `src/api/adminApi.ts`: client tipado para endpoints admin.
 
 ## Trilha
 

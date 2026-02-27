@@ -19,6 +19,14 @@ class Settings:
     db_path: str
     session_id: str
     persist_memory: bool
+    # Auth / JWT
+    jwt_secret: str = "change-me-in-production"
+    jwt_access_expiry_minutes: int = 30
+    jwt_refresh_expiry_days: int = 7
+    auth_db_path: str = ".jarvis-auth.db"
+    admin_username: str = "admin"
+    admin_email: str = "admin@jarvis.local"
+    admin_password: str = "admin"
 
 
 def _read_non_negative_int(key: str, default: str) -> int:
@@ -63,6 +71,17 @@ def load_settings() -> Settings:
         db_path=os.getenv("JARVIS_DB_PATH", ".jarvis.db"),
         session_id=os.getenv("JARVIS_SESSION_ID", "default"),
         persist_memory=_read_bool("JARVIS_PERSIST_MEMORY", True),
+        jwt_secret=os.getenv("JARVIS_JWT_SECRET", "change-me-in-production"),
+        jwt_access_expiry_minutes=_read_non_negative_int(
+            "JARVIS_JWT_ACCESS_EXPIRY_MINUTES", "30"
+        ),
+        jwt_refresh_expiry_days=_read_non_negative_int(
+            "JARVIS_JWT_REFRESH_EXPIRY_DAYS", "7"
+        ),
+        auth_db_path=os.getenv("JARVIS_AUTH_DB_PATH", ".jarvis-auth.db"),
+        admin_username=os.getenv("JARVIS_ADMIN_USERNAME", "admin"),
+        admin_email=os.getenv("JARVIS_ADMIN_EMAIL", "admin@jarvis.local"),
+        admin_password=os.getenv("JARVIS_ADMIN_PASSWORD", "admin"),
     )
 
 

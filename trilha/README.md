@@ -10,7 +10,7 @@ Este diretório guarda nossa trilha em Markdown para evoluir o assistente em eta
 - `trilha/03-tool-calling-basico.md`: tools iniciais (calculadora e hora atual).
 - `trilha/04-migracao-langgraph.md`: fluxo em grafo com estado explicito.
 - `trilha/05-memoria-persistente.md`: historico por sessao entre execucoes.
-- Próximos arquivos seguirão o padrão `NN-nome-da-etapa.md`.
+- `trilha/06-auth-multiusuario.md`: autenticacao JWT, multi-usuario e admin panel.
 
 ## Como vamos usar
 

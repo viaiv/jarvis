@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
+import { useAuth } from './auth/AuthContext'
 import { useChat } from './useChat'
 
 function App() {
-  const { messages, status, isStreaming, sendMessage } = useChat()
+  const { user, logout } = useAuth()
+  const { messages, status, isStreaming, sendMessage, reconnect } = useChat()
   const [input, setInput] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -33,19 +36,42 @@ function App() {
             Jarvis
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <span
-            className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${
-              isConnected
-                ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
-                : status === 'connecting'
-                  ? 'bg-amber-400 animate-pulse'
-                  : 'bg-text-muted'
-            }`}
-          />
-          <span className="text-[11px] text-text-secondary font-mono tracking-wide">
-            {isConnected ? 'online' : status === 'connecting' ? 'connecting' : 'offline'}
-          </span>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span
+              className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${
+                isConnected
+                  ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+                  : status === 'connecting'
+                    ? 'bg-amber-400 animate-pulse'
+                    : 'bg-text-muted'
+              }`}
+            />
+            <span className="text-[11px] text-text-secondary font-mono tracking-wide">
+              {isConnected ? 'online' : status === 'connecting' ? 'connecting' : 'offline'}
+            </span>
+          </div>
+          {user && (
+            <div className="flex items-center gap-3">
+              {user.role === 'admin' && (
+                <Link
+                  to="/admin"
+                  className="text-[11px] text-text-muted font-mono tracking-wide hover:text-accent transition-colors duration-200"
+                >
+                  admin
+                </Link>
+              )}
+              <span className="text-[11px] text-text-secondary font-mono tracking-wide">
+                {user.username}
+              </span>
+              <button
+                onClick={() => { logout(); reconnect() }}
+                className="text-[11px] text-text-muted font-mono tracking-wide hover:text-accent transition-colors duration-200 cursor-pointer"
+              >
+                sair
+              </button>
+            </div>
+          )}
         </div>
       </header>
 

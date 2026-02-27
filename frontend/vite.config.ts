@@ -8,6 +8,8 @@ export default defineConfig({
     proxy: {
       '/ws': { target: 'http://localhost:8000', ws: true },
       '/chat': { target: 'http://localhost:8000' },
+      '/auth': { target: 'http://localhost:8000' },
+      '/admin': { target: 'http://localhost:8000' },
     },
   },
 })

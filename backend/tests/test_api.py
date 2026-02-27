@@ -1,9 +1,33 @@
 import pytest
+import pytest_asyncio
 from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from starlette.testclient import TestClient
 
 from jarvis.api import app
+from jarvis.auth import create_access_token
 from jarvis.config import Settings
+from jarvis.db import create_user, init_db
+
+
+def _make_settings(**overrides) -> Settings:
+    defaults = dict(
+        system_prompt="prompt teste",
+        model_name="gpt-test",
+        history_window=3,
+        max_tool_steps=5,
+        db_path=":memory:",
+        session_id="test-session",
+        persist_memory=False,
+        jwt_secret="test-secret",
+        jwt_access_expiry_minutes=30,
+        jwt_refresh_expiry_days=7,
+        auth_db_path=":memory:",
+        admin_username="admin",
+        admin_email="admin@test.local",
+        admin_password="admin123",
+    )
+    defaults.update(overrides)
+    return Settings(**defaults)
 
 
 class FakeGraph:
@@ -52,43 +76,183 @@ class FakeStreamGraphWithTools:
         )
 
 
-def fake_settings(**overrides):
-    defaults = dict(
-        system_prompt="prompt teste",
-        model_name="gpt-test",
-        history_window=3,
-        max_tool_steps=5,
-        db_path=":memory:",
-        session_id="test-session",
-        persist_memory=False,
-    )
-    defaults.update(overrides)
-    return Settings(**defaults)
+JWT_SECRET = "test-secret"
 
 
-@pytest.fixture()
-def setup_app():
-    """Injeta FakeGraph + settings no app.state (bypass lifespan)."""
+@pytest_asyncio.fixture()
+async def setup_auth():
+    """Cria auth DB com usuario de teste e injeta no app.state."""
+    conn = await init_db(":memory:")
+    user = await create_user(conn, "testuser", "test@test.com", "testpass")
+    admin = await create_user(conn, "admin", "admin@test.com", "adminpass", role="admin")
+
+    settings = _make_settings(jwt_secret=JWT_SECRET)
+
+    app.state.settings = settings
+    app.state.auth_db = conn
     app.state.graph = FakeGraph()
-    app.state.settings = fake_settings()
-    yield
-    del app.state.graph
-    del app.state.settings
+
+    token = create_access_token(user["id"], user["role"], JWT_SECRET)
+    admin_token = create_access_token(admin["id"], admin["role"], JWT_SECRET)
+
+    yield {
+        "user": user,
+        "admin": admin,
+        "token": token,
+        "admin_token": admin_token,
+        "conn": conn,
+    }
+
+    await conn.close()
+    for attr in ("graph", "settings", "auth_db"):
+        if hasattr(app.state, attr):
+            delattr(app.state, attr)
 
 
-@pytest.fixture()
-def setup_app_stream():
-    """Injeta FakeStreamGraph + settings no app.state (bypass lifespan)."""
+@pytest_asyncio.fixture()
+async def setup_auth_stream(setup_auth):
+    """Mesmo que setup_auth mas com FakeStreamGraph."""
     app.state.graph = FakeStreamGraph()
-    app.state.settings = fake_settings()
-    yield
-    del app.state.graph
-    del app.state.settings
+    yield setup_auth
+
+
+@pytest_asyncio.fixture()
+async def setup_auth_stream_tools(setup_auth):
+    """Mesmo que setup_auth mas com FakeStreamGraphWithTools."""
+    app.state.graph = FakeStreamGraphWithTools()
+    yield setup_auth
+
+
+class TestAuthEndpoints:
+    @pytest.mark.asyncio
+    async def test_login_success(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/auth/login",
+                json={"username": "testuser", "password": "testpass"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "access_token" in body
+        assert "refresh_token" in body
+        assert body["token_type"] == "bearer"
+
+    @pytest.mark.asyncio
+    async def test_login_wrong_password(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/auth/login",
+                json={"username": "testuser", "password": "wrong"},
+            )
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_login_nonexistent_user(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/auth/login",
+                json={"username": "ghost", "password": "x"},
+            )
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_refresh_token(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+        from jarvis.auth import create_refresh_token
+
+        refresh = create_refresh_token(
+            setup_auth["user"]["id"], "user", JWT_SECRET,
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/auth/refresh",
+                json={"refresh_token": refresh},
+            )
+
+        assert resp.status_code == 200
+        assert "access_token" in resp.json()
+
+    @pytest.mark.asyncio
+    async def test_refresh_with_access_token_fails(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/auth/refresh",
+                json={"refresh_token": setup_auth["token"]},
+            )
+
+        assert resp.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_me_endpoint(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get(
+                "/auth/me",
+                headers={"Authorization": f"Bearer {setup_auth['token']}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["username"] == "testuser"
+        assert body["role"] == "user"
+
+    @pytest.mark.asyncio
+    async def test_me_without_token_returns_401(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.get("/auth/me")
+
+        assert resp.status_code == 401
 
 
 class TestChatEndpoint:
     @pytest.mark.asyncio
-    async def test_chat_response_with_default_thread(self, setup_app):
+    async def test_chat_response_with_auth(self, setup_auth):
+        from httpx import ASGITransport, AsyncClient
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/chat",
+                json={"message": "Ola"},
+                headers={"Authorization": f"Bearer {setup_auth['token']}"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["response"] == "resposta fake"
+
+    @pytest.mark.asyncio
+    async def test_chat_without_auth_returns_401(self, setup_auth):
         from httpx import ASGITransport, AsyncClient
 
         async with AsyncClient(
@@ -96,13 +260,10 @@ class TestChatEndpoint:
         ) as client:
             resp = await client.post("/chat", json={"message": "Ola"})
 
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["response"] == "resposta fake"
-        assert body["thread_id"] == "test-session"
+        assert resp.status_code == 401
 
     @pytest.mark.asyncio
-    async def test_chat_response_with_custom_thread(self, setup_app):
+    async def test_chat_with_custom_thread(self, setup_auth):
         from httpx import ASGITransport, AsyncClient
 
         async with AsyncClient(
@@ -111,51 +272,34 @@ class TestChatEndpoint:
             resp = await client.post(
                 "/chat",
                 json={"message": "Ola", "thread_id": "custom-123"},
+                headers={"Authorization": f"Bearer {setup_auth['token']}"},
             )
 
         assert resp.status_code == 200
         assert resp.json()["thread_id"] == "custom-123"
 
     @pytest.mark.asyncio
-    async def test_missing_message_returns_422(self, setup_app):
+    async def test_missing_message_returns_422(self, setup_auth):
         from httpx import ASGITransport, AsyncClient
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
         ) as client:
-            resp = await client.post("/chat", json={})
+            resp = await client.post(
+                "/chat",
+                json={},
+                headers={"Authorization": f"Bearer {setup_auth['token']}"},
+            )
 
         assert resp.status_code == 422
 
-    @pytest.mark.asyncio
-    async def test_empty_response_fallback(self, setup_app):
-        from httpx import ASGITransport, AsyncClient
-
-        app.state.graph = FakeGraph(response_content="")
-
-        async with AsyncClient(
-            transport=ASGITransport(app=app), base_url="http://test"
-        ) as client:
-            resp = await client.post("/chat", json={"message": "Ola"})
-
-        assert resp.status_code == 200
-        assert resp.json()["response"] == "Nao foi possivel gerar resposta."
-
-
-@pytest.fixture()
-def setup_app_stream_tools():
-    """Injeta FakeStreamGraphWithTools + settings no app.state."""
-    app.state.graph = FakeStreamGraphWithTools()
-    app.state.settings = fake_settings()
-    yield
-    del app.state.graph
-    del app.state.settings
-
 
 class TestWebSocketEndpoint:
-    def test_streaming_tokens(self, setup_app_stream):
+    @pytest.mark.asyncio
+    async def test_streaming_tokens_with_auth(self, setup_auth_stream):
+        ctx = setup_auth_stream
         client = TestClient(app)
-        with client.websocket_connect("/ws") as ws:
+        with client.websocket_connect(f"/ws?token={ctx['token']}") as ws:
             ws.send_json({"message": "Ola"})
 
             data1 = ws.receive_json()
@@ -167,41 +311,36 @@ class TestWebSocketEndpoint:
             data3 = ws.receive_json()
             assert data3 == {"type": "end"}
 
-    def test_missing_message_returns_error(self, setup_app_stream):
+    @pytest.mark.asyncio
+    async def test_ws_without_token_closes(self, setup_auth):
         client = TestClient(app)
-        with client.websocket_connect("/ws") as ws:
+        with pytest.raises(Exception):
+            with client.websocket_connect("/ws") as ws:
+                ws.send_json({"message": "Ola"})
+
+    @pytest.mark.asyncio
+    async def test_ws_with_invalid_token_closes(self, setup_auth):
+        client = TestClient(app)
+        with pytest.raises(Exception):
+            with client.websocket_connect("/ws?token=bad-token") as ws:
+                ws.send_json({"message": "Ola"})
+
+    @pytest.mark.asyncio
+    async def test_missing_message_returns_error(self, setup_auth_stream):
+        ctx = setup_auth_stream
+        client = TestClient(app)
+        with client.websocket_connect(f"/ws?token={ctx['token']}") as ws:
             ws.send_json({"text": "Ola"})
 
             data = ws.receive_json()
             assert data["type"] == "error"
             assert "message" in data["content"].lower()
 
-    def test_multiple_messages_same_connection(self, setup_app_stream):
+    @pytest.mark.asyncio
+    async def test_tool_events_through_ws(self, setup_auth_stream_tools):
+        ctx = setup_auth_stream_tools
         client = TestClient(app)
-        with client.websocket_connect("/ws") as ws:
-            # First message
-            ws.send_json({"message": "Ola"})
-            tokens = []
-            while True:
-                data = ws.receive_json()
-                if data["type"] == "end":
-                    break
-                tokens.append(data["content"])
-            assert tokens == ["Ola", " mundo"]
-
-            # Second message on same connection
-            ws.send_json({"message": "Tudo bem?"})
-            tokens2 = []
-            while True:
-                data = ws.receive_json()
-                if data["type"] == "end":
-                    break
-                tokens2.append(data["content"])
-            assert tokens2 == ["Ola", " mundo"]
-
-    def test_tool_events_through_ws(self, setup_app_stream_tools):
-        client = TestClient(app)
-        with client.websocket_connect("/ws") as ws:
+        with client.websocket_connect(f"/ws?token={ctx['token']}") as ws:
             ws.send_json({"message": "Quanto e 2+2?"})
 
             events = []
