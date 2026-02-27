@@ -1,6 +1,6 @@
 from typing import Any, List
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.errors import GraphRecursionError
 
 TOOL_LIMIT_MESSAGE = (
@@ -33,26 +33,23 @@ def _get_last_ai_message(messages: List[BaseMessage]) -> AIMessage | None:
 
 def invoke_chat(
     graph,
-    system_prompt: str,
-    history: List[BaseMessage],
     user_input: str,
     max_tool_steps: int,
+    thread_id: str,
 ) -> str:
-    initial_messages: List[BaseMessage] = [
-        SystemMessage(content=system_prompt),
-        *history,
-        HumanMessage(content=user_input),
-    ]
     recursion_limit = max(6, 2 * max_tool_steps + 4)
 
     try:
         result = graph.invoke(
             {
-                "messages": initial_messages,
+                "messages": [HumanMessage(content=user_input)],
                 "tool_steps": 0,
                 "max_tool_steps": max_tool_steps,
             },
-            config={"recursion_limit": recursion_limit},
+            config={
+                "recursion_limit": recursion_limit,
+                "configurable": {"thread_id": thread_id},
+            },
         )
     except GraphRecursionError:
         return TOOL_LIMIT_MESSAGE
@@ -69,9 +66,3 @@ def invoke_chat(
     if not answer:
         return "Nao foi possivel gerar resposta."
     return answer
-
-
-def trim_history(history: List[BaseMessage], max_turns: int) -> List[BaseMessage]:
-    if max_turns == 0:
-        return []
-    return history[-(max_turns * 2) :]

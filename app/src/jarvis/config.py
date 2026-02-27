@@ -16,7 +16,7 @@ class Settings:
     model_name: str
     history_window: int
     max_tool_steps: int
-    memory_file: str
+    db_path: str
     session_id: str
     persist_memory: bool
 
@@ -60,7 +60,7 @@ def load_settings() -> Settings:
         model_name=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
         history_window=_read_non_negative_int("JARVIS_HISTORY_WINDOW", "3"),
         max_tool_steps=_read_non_negative_int("JARVIS_MAX_TOOL_STEPS", "5"),
-        memory_file=os.getenv("JARVIS_MEMORY_FILE", ".jarvis_memory.json"),
+        db_path=os.getenv("JARVIS_DB_PATH", ".jarvis.db"),
         session_id=os.getenv("JARVIS_SESSION_ID", "default"),
         persist_memory=_read_bool("JARVIS_PERSIST_MEMORY", True),
     )
@@ -71,7 +71,6 @@ def apply_cli_overrides(
     max_turns: int | None,
     max_tool_steps: int | None,
     session_id: str | None,
-    memory_file: str | None,
     disable_memory: bool,
 ) -> Settings:
     updated = settings
@@ -91,12 +90,6 @@ def apply_cli_overrides(
         if not stripped:
             raise SystemExit("--session-id nao pode ser vazio.")
         updated = replace(updated, session_id=stripped)
-
-    if memory_file is not None:
-        stripped = memory_file.strip()
-        if not stripped:
-            raise SystemExit("--memory-file nao pode ser vazio.")
-        updated = replace(updated, memory_file=stripped)
 
     if disable_memory:
         updated = replace(updated, persist_memory=False)
