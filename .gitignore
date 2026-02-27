@@ -10,3 +10,4 @@ build/
 *.egg-info/*.local.*
 CLAUDE.local.md
 .jarvis.db
+node_modules/

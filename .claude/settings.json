@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(./app/**)",
+      "Read(./backend/**)",
+      "Read(./frontend/**)",
       "Read(./trilha/**)",
       "Read(./README.md)",
       "Bash(python -m pytest *)",

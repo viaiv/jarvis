@@ -1,5 +1,5 @@
 ---
-globs: ["app/tests/**/*.py"]
+globs: ["backend/tests/**/*.py"]
 ---
 
 # Convenções de Teste

@@ -1,5 +1,5 @@
 ---
-globs: ["app/src/jarvis/**/*.py"]
+globs: ["backend/src/jarvis/**/*.py"]
 ---
 
 # Estilo Python — Jarvis

@@ -10,6 +10,7 @@ Pacote Python instalável com o assistente conversacional.
 - `chat.py` — `invoke_chat()` e `stream_chat()` para execução do grafo
 - `chat_once.py` — Entrypoint legado, redireciona para `cli.main()`
 - `tools.py` — Ferramentas: `calculator`, `current_time` + registro em `ALL_TOOLS`
+- `api.py` — Entry point da API REST (`jarvis-api`), endpoints FastAPI
 
 ## Fluxo de Dados
 
@@ -25,3 +26,4 @@ Pacote Python instalável com o assistente conversacional.
 - `langgraph-checkpoint-sqlite` — Persistência async com SQLite
 - `rich` — Renderização Markdown no terminal
 - `python-dotenv` — Leitura do `.env`
+- `fastapi` + `uvicorn` — API REST

@@ -10,31 +10,40 @@ Projeto educacional para aprender tool calling, grafos de agentes e memória per
 - **Modelo padrão**: gpt-4.1-mini (configurável via `.env`)
 - **Persistência**: SQLite via `langgraph-checkpoint-sqlite`
 - **CLI**: argparse + Rich (streaming com Markdown)
+- **API**: FastAPI + Uvicorn
+- **Frontend**: React + Vite + TypeScript
 - **Testes**: pytest + pytest-asyncio
 
 Mapa de diretórios:
-- `app/src/jarvis/` — Código principal do assistente
-- `app/tests/` — Testes unitários
+- `backend/src/jarvis/` — Código principal do assistente (Python/FastAPI)
+- `backend/tests/` — Testes unitários
+- `frontend/` — Interface web (React + Vite + TypeScript)
 - `trilha/` — Documentação incremental da trilha de aprendizado (etapas 00–05)
 
 ## Comandos Essenciais
 
 ```bash
-# Setup
+# Setup backend
 python -m venv .venv && source .venv/bin/activate
-pip install -e ./app
-pip install -e "./app[dev]"    # inclui pytest
+pip install -e ./backend
+pip install -e "./backend[dev]"    # inclui pytest
 
-# Executar
+# Setup frontend
+cd frontend && npm install
+
+# Executar CLI
 jarvis-chat "Pergunta aqui"   # single-turn
 jarvis-chat                    # modo interativo (multi-turno)
 
+# Executar frontend (dev)
+cd frontend && npm run dev
+
 # Testes
-cd app && python -m pytest tests/ -v
+cd backend && python -m pytest tests/ -v
 python -m pytest tests/test_tools.py -v   # teste individual
 
 # Variáveis de ambiente
-cp app/.env.example .env       # configurar OPENAI_API_KEY
+cp backend/.env.example .env       # configurar OPENAI_API_KEY
 ```
 
 ## Arquitetura do Grafo (LangGraph)
@@ -67,4 +76,4 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - O arquivo `.jarvis.db` é criado em runtime para persistência de memória
 - Ver @README.md para overview e instruções de uso
 - Ver @trilha/README.md para roadmap das etapas de aprendizado
-- Ver @app/pyproject.toml para dependências e entry points
+- Ver @backend/pyproject.toml para dependências e entry points

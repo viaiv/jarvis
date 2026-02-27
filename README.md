@@ -4,17 +4,19 @@ Projeto de estudo para aprender `LangChain` e `LangGraph` por etapas.
 
 ## Estrutura
 
-- `app/`: código executável do assistente.
-- `trilha/`: documentação incremental da trilha de aprendizado.
+- `backend/`: codigo executavel do assistente (Python/FastAPI).
+- `frontend/`: interface web (React + Vite + TypeScript).
+- `trilha/`: documentacao incremental da trilha de aprendizado.
 
-Arquitetura atual do app (`app/src/jarvis/`):
+Arquitetura atual do backend (`backend/src/jarvis/`):
 
 - `cli.py`: interface de linha de comando e loop interativo.
-- `config.py`: leitura e validação de configurações do `.env`.
-- `tools.py`: ferramentas disponíveis para o agente.
-- `graph.py`: definição e compilação do fluxo no LangGraph.
-- `chat.py`: invocação do grafo e tratamento de histórico.
-- `memory.py`: persistência de histórico por sessão.
+- `config.py`: leitura e validacao de configuracoes do `.env`.
+- `tools.py`: ferramentas disponiveis para o agente.
+- `graph.py`: definicao e compilacao do fluxo no LangGraph.
+- `chat.py`: invocacao do grafo e tratamento de historico.
+- `memory.py`: persistencia de historico por sessao.
+- `api.py`: API REST com FastAPI.
 
 ## Setup rapido
 
@@ -25,16 +27,22 @@ python -m venv .venv
 source .venv/bin/activate
 ```
 
-2. Instale as dependencias:
+2. Instale as dependencias do backend:
 
 ```bash
-pip install -e ./app
+pip install -e ./backend
 ```
 
-3. Configure ambiente:
+3. Instale as dependencias do frontend:
 
 ```bash
-cp app/.env.example .env
+cd frontend && npm install
+```
+
+4. Configure ambiente:
+
+```bash
+cp backend/.env.example .env
 ```
 
 Edite `.env` e preencha `OPENAI_API_KEY`.
@@ -98,6 +106,18 @@ jarvis-chat "Que horas sao em America/Sao_Paulo?"
 - Ao reiniciar o app, o historico da sessao e recarregado automaticamente.
 - A janela curta (`JARVIS_HISTORY_WINDOW`) limita o contexto enviado ao modelo,
   mas o historico completo continua salvo no arquivo.
+
+## Frontend
+
+Interface web para o assistente, construida com React + Vite + TypeScript.
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+O dev server sobe em `http://localhost:5173`.
 
 ## Trilha
 

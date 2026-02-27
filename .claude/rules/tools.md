@@ -1,5 +1,5 @@
 ---
-globs: ["app/src/jarvis/tools.py"]
+globs: ["backend/src/jarvis/tools.py"]
 ---
 
 # Regras para Tools
