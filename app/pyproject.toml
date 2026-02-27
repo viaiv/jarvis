@@ -16,13 +16,16 @@ dependencies = [
   "aiosqlite>=0.20.0",
   "python-dotenv>=1.0.0",
   "rich>=13.0.0",
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.34.0",
 ]
 
 [project.scripts]
 jarvis-chat = "jarvis.cli:main"
+jarvis-api = "jarvis.api:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.28.0"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
