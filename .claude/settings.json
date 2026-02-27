@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(./app/**)",
+      "Read(./trilha/**)",
+      "Read(./README.md)",
+      "Bash(python -m pytest *)",
+      "Bash(pip install *)",
+      "Bash(jarvis-chat *)",
+      "Bash(git *)",
+      "Bash(cd *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Bash(rm -rf *)"
+    ]
+  },
+  "env": {
+    "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"
+  }
+}
