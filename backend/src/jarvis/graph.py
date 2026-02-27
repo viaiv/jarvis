@@ -1,6 +1,6 @@
 from typing import Annotated, List, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -13,6 +13,53 @@ class GraphState(TypedDict):
     messages: Annotated[List[BaseMessage], add_messages]
     tool_steps: int
     max_tool_steps: int
+
+
+def _sanitize_tool_sequences(messages: List[BaseMessage]) -> List[BaseMessage]:
+    """Remove sequencias invalidas de tool calls.
+
+    A API da OpenAI exige que:
+    - Todo ToolMessage tenha um AIMessage(tool_calls) precedente com tool_call_id correspondente
+    - Todo AIMessage(tool_calls) tenha ToolMessages para todos os seus tool_call_ids
+
+    Percorre a lista e remove blocos incompletos (AIMessage(tool_calls) + ToolMessages parciais).
+    """
+    result: List[BaseMessage] = []
+    i = 0
+
+    while i < len(messages):
+        msg = messages[i]
+
+        if isinstance(msg, AIMessage) and getattr(msg, "tool_calls", None):
+            expected_ids = {tc["id"] for tc in msg.tool_calls}
+
+            tool_msgs: List[BaseMessage] = []
+            j = i + 1
+            while j < len(messages) and isinstance(messages[j], ToolMessage):
+                tool_msgs.append(messages[j])
+                j += 1
+
+            response_ids = {
+                tm.tool_call_id
+                for tm in tool_msgs
+                if isinstance(tm, ToolMessage)
+            }
+
+            if expected_ids <= response_ids:
+                result.append(msg)
+                result.extend(tool_msgs)
+            # Senao descarta o bloco inteiro (AIMessage + ToolMessages parciais)
+            i = j
+
+        elif isinstance(msg, ToolMessage):
+            # ToolMessage orfa (sem AIMessage precedente) — descarta
+            i += 1
+
+        else:
+            result.append(msg)
+            i += 1
+
+    return result
 
 
 def _trim_and_prepend_system(
@@ -39,6 +86,8 @@ def _trim_and_prepend_system(
         # Apenas a mensagem atual
         if non_system:
             non_system = [non_system[-1]]
+
+    non_system = _sanitize_tool_sequences(non_system)
 
     return [SystemMessage(content=system_prompt), *non_system]
 
