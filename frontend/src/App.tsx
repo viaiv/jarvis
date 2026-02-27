@@ -60,11 +60,30 @@ function App() {
                 }`}
               >
                 {msg.role === 'assistant' ? (
-                  <div className="prose prose-invert prose-sm max-w-none">
-                    <ReactMarkdown>
-                      {msg.content || '\u00A0'}
-                    </ReactMarkdown>
-                  </div>
+                  <>
+                    {msg.toolCalls && msg.toolCalls.length > 0 && (
+                      <div className="mb-2 space-y-1">
+                        {msg.toolCalls.map((tc) => (
+                          <div
+                            key={tc.callId}
+                            className="bg-zinc-700/50 rounded-lg px-3 py-2 text-xs text-zinc-400"
+                          >
+                            <span className="font-medium text-zinc-300">{tc.name}</span>
+                            {tc.output == null ? (
+                              <span className="ml-2 animate-pulse">Executando...</span>
+                            ) : (
+                              <span className="ml-2 text-zinc-500">{tc.output}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="prose prose-invert prose-sm max-w-none">
+                      <ReactMarkdown>
+                        {msg.content || '\u00A0'}
+                      </ReactMarkdown>
+                    </div>
+                  </>
                 ) : (
                   <p className="whitespace-pre-wrap">{msg.content}</p>
                 )}

@@ -83,13 +83,13 @@ async def websocket_endpoint(ws: WebSocket):
             thread_id = data.get("thread_id") or settings.session_id
 
             try:
-                async for token in stream_chat(
+                async for event in stream_chat(
                     graph=app.state.graph,
                     user_input=message,
                     max_tool_steps=settings.max_tool_steps,
                     thread_id=thread_id,
                 ):
-                    await ws.send_json({"type": "token", "content": token})
+                    await ws.send_json(event)
 
                 await ws.send_json({"type": "end"})
             except Exception as exc:

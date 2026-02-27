@@ -1,6 +1,12 @@
 from typing import Any, AsyncGenerator, List
 
-from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+    ToolMessage,
+)
 from langgraph.errors import GraphRecursionError
 
 TOOL_LIMIT_MESSAGE = (
@@ -73,12 +79,13 @@ async def stream_chat(
     user_input: str,
     max_tool_steps: int,
     thread_id: str,
-) -> AsyncGenerator[str, None]:
-    """Stream tokens from the graph one by one."""
+) -> AsyncGenerator[dict, None]:
+    """Stream eventos tipados do grafo (token, tool_start, tool_end)."""
     recursion_limit = max(6, 2 * max_tool_steps + 4)
 
     emitted = False
     hit_tool_limit = False
+    emitted_tool_ids: set[str] = set()
 
     try:
         async for chunk, metadata in graph.astream(
@@ -93,30 +100,49 @@ async def stream_chat(
             },
             stream_mode="messages",
         ):
-            if metadata.get("langgraph_node") != "assistant":
-                continue
+            node = metadata.get("langgraph_node")
 
-            if (
-                isinstance(chunk, AIMessageChunk)
-                and getattr(chunk, "tool_call_chunks", None)
-            ):
-                hit_tool_limit = True
-                continue
+            if node == "assistant" and isinstance(chunk, AIMessageChunk):
+                tool_chunks = getattr(chunk, "tool_call_chunks", None)
+                if tool_chunks:
+                    for tc in tool_chunks:
+                        name = tc.get("name")
+                        call_id = tc.get("id")
+                        if name and call_id and call_id not in emitted_tool_ids:
+                            emitted_tool_ids.add(call_id)
+                            yield {
+                                "type": "tool_start",
+                                "name": name,
+                                "call_id": call_id,
+                            }
+                    hit_tool_limit = True
+                    continue
 
-            if isinstance(chunk, AIMessageChunk) and chunk.content:
-                text = chunk.content if isinstance(chunk.content, str) else ""
-                if text:
-                    hit_tool_limit = False
-                    emitted = True
-                    yield text
+                if chunk.content:
+                    text = chunk.content if isinstance(chunk.content, str) else ""
+                    if text:
+                        hit_tool_limit = False
+                        emitted = True
+                        yield {"type": "token", "content": text}
+
+            elif node == "tools" and isinstance(chunk, ToolMessage):
+                tool_name = chunk.name or ""
+                call_id = chunk.tool_call_id or ""
+                output = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
+                yield {
+                    "type": "tool_end",
+                    "name": tool_name,
+                    "call_id": call_id,
+                    "output": output,
+                }
 
     except GraphRecursionError:
-        yield TOOL_LIMIT_MESSAGE
+        yield {"type": "token", "content": TOOL_LIMIT_MESSAGE}
         return
 
     if hit_tool_limit and not emitted:
-        yield TOOL_LIMIT_MESSAGE
+        yield {"type": "token", "content": TOOL_LIMIT_MESSAGE}
         return
 
     if not emitted:
-        yield "Nao foi possivel gerar resposta."
+        yield {"type": "token", "content": "Nao foi possivel gerar resposta."}

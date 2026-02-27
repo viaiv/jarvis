@@ -1,5 +1,5 @@
 import pytest
-from langchain_core.messages import AIMessage, AIMessageChunk
+from langchain_core.messages import AIMessage, AIMessageChunk, ToolMessage
 from starlette.testclient import TestClient
 
 from jarvis.api import app
@@ -29,6 +29,27 @@ class FakeStreamGraph:
                 AIMessageChunk(content=token),
                 {"langgraph_node": "assistant"},
             )
+
+
+class FakeStreamGraphWithTools:
+    """Simula astream com tool_start e tool_end."""
+
+    async def astream(self, state, config=None, stream_mode=None):
+        chunk = AIMessageChunk(content="")
+        chunk.tool_call_chunks = [
+            {"name": "calculator", "args": '{"expression": "2+2"}', "id": "call_1", "index": 0}
+        ]
+        yield (chunk, {"langgraph_node": "assistant"})
+
+        yield (
+            ToolMessage(content="4", name="calculator", tool_call_id="call_1"),
+            {"langgraph_node": "tools"},
+        )
+
+        yield (
+            AIMessageChunk(content="O resultado e 4."),
+            {"langgraph_node": "assistant"},
+        )
 
 
 def fake_settings(**overrides):
@@ -121,6 +142,16 @@ class TestChatEndpoint:
         assert resp.json()["response"] == "Nao foi possivel gerar resposta."
 
 
+@pytest.fixture()
+def setup_app_stream_tools():
+    """Injeta FakeStreamGraphWithTools + settings no app.state."""
+    app.state.graph = FakeStreamGraphWithTools()
+    app.state.settings = fake_settings()
+    yield
+    del app.state.graph
+    del app.state.settings
+
+
 class TestWebSocketEndpoint:
     def test_streaming_tokens(self, setup_app_stream):
         client = TestClient(app)
@@ -167,3 +198,28 @@ class TestWebSocketEndpoint:
                     break
                 tokens2.append(data["content"])
             assert tokens2 == ["Ola", " mundo"]
+
+    def test_tool_events_through_ws(self, setup_app_stream_tools):
+        client = TestClient(app)
+        with client.websocket_connect("/ws") as ws:
+            ws.send_json({"message": "Quanto e 2+2?"})
+
+            events = []
+            while True:
+                data = ws.receive_json()
+                if data["type"] == "end":
+                    break
+                events.append(data)
+
+            types = [e["type"] for e in events]
+            assert "tool_start" in types
+            assert "tool_end" in types
+            assert "token" in types
+
+            tool_start = next(e for e in events if e["type"] == "tool_start")
+            assert tool_start["name"] == "calculator"
+            assert tool_start["call_id"] == "call_1"
+
+            tool_end = next(e for e in events if e["type"] == "tool_end")
+            assert tool_end["name"] == "calculator"
+            assert tool_end["output"] == "4"

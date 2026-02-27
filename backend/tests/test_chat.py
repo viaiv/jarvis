@@ -1,5 +1,5 @@
 import pytest
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, ToolMessage
 from langgraph.errors import GraphRecursionError
 
 from jarvis.chat import (
@@ -133,7 +133,7 @@ class TestInvokeChat:
 
 
 class FakeStreamGraph:
-    """Simula graph.astream() retornando (AIMessageChunk, metadata)."""
+    """Simula graph.astream() retornando (chunk, metadata)."""
 
     def __init__(self, events=None, raise_recursion=False):
         self.events = events or []
@@ -150,25 +150,29 @@ class FakeStreamGraph:
 
 class TestStreamChat:
     @pytest.mark.asyncio
-    async def test_yields_tokens(self):
+    async def test_yields_token_events(self):
         events = [
             (AIMessageChunk(content="Ola"), {"langgraph_node": "assistant"}),
             (AIMessageChunk(content=" mundo"), {"langgraph_node": "assistant"}),
             (AIMessageChunk(content="!"), {"langgraph_node": "assistant"}),
         ]
         graph = FakeStreamGraph(events=events)
-        tokens = [token async for token in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
-        assert tokens == ["Ola", " mundo", "!"]
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results == [
+            {"type": "token", "content": "Ola"},
+            {"type": "token", "content": " mundo"},
+            {"type": "token", "content": "!"},
+        ]
 
     @pytest.mark.asyncio
-    async def test_filters_non_assistant_nodes(self):
+    async def test_skips_non_assistant_text_chunks(self):
         events = [
-            (AIMessageChunk(content="ignorar"), {"langgraph_node": "tools"}),
+            (AIMessageChunk(content="ignorar"), {"langgraph_node": "other"}),
             (AIMessageChunk(content="ok"), {"langgraph_node": "assistant"}),
         ]
         graph = FakeStreamGraph(events=events)
-        tokens = [token async for token in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
-        assert tokens == ["ok"]
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results == [{"type": "token", "content": "ok"}]
 
     @pytest.mark.asyncio
     async def test_skips_empty_content_chunks(self):
@@ -177,20 +181,20 @@ class TestStreamChat:
             (AIMessageChunk(content="texto"), {"langgraph_node": "assistant"}),
         ]
         graph = FakeStreamGraph(events=events)
-        tokens = [token async for token in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
-        assert tokens == ["texto"]
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results == [{"type": "token", "content": "texto"}]
 
     @pytest.mark.asyncio
     async def test_recursion_error_yields_tool_limit(self):
         graph = FakeStreamGraph(raise_recursion=True)
-        tokens = [token async for token in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
-        assert tokens == [TOOL_LIMIT_MESSAGE]
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results == [{"type": "token", "content": TOOL_LIMIT_MESSAGE}]
 
     @pytest.mark.asyncio
     async def test_no_content_yields_fallback(self):
         graph = FakeStreamGraph(events=[])
-        tokens = [token async for token in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
-        assert tokens == ["Nao foi possivel gerar resposta."]
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results == [{"type": "token", "content": "Nao foi possivel gerar resposta."}]
 
     @pytest.mark.asyncio
     async def test_tool_limit_when_only_tool_chunks(self):
@@ -200,8 +204,11 @@ class TestStreamChat:
             (chunk, {"langgraph_node": "assistant"}),
         ]
         graph = FakeStreamGraph(events=events)
-        tokens = [token async for token in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
-        assert tokens == [TOOL_LIMIT_MESSAGE]
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results == [
+            {"type": "tool_start", "name": "calc", "call_id": "1"},
+            {"type": "token", "content": TOOL_LIMIT_MESSAGE},
+        ]
 
     @pytest.mark.asyncio
     async def test_config_includes_thread_id(self):
@@ -209,5 +216,66 @@ class TestStreamChat:
             (AIMessageChunk(content="ok"), {"langgraph_node": "assistant"}),
         ]
         graph = FakeStreamGraph(events=events)
-        [token async for token in stream_chat(graph, "oi", max_tool_steps=5, thread_id="minha-sessao")]
+        [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="minha-sessao")]
         assert graph.captured_config["configurable"]["thread_id"] == "minha-sessao"
+
+    @pytest.mark.asyncio
+    async def test_emits_tool_start_on_tool_call_chunks(self):
+        chunk = AIMessageChunk(content="")
+        chunk.tool_call_chunks = [
+            {"name": "calculator", "args": '{"expression": "2+2"}', "id": "call_abc", "index": 0}
+        ]
+        text_chunk = AIMessageChunk(content="O resultado e 4.")
+        events = [
+            (chunk, {"langgraph_node": "assistant"}),
+            (text_chunk, {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results[0] == {
+            "type": "tool_start",
+            "name": "calculator",
+            "call_id": "call_abc",
+        }
+        assert results[1] == {"type": "token", "content": "O resultado e 4."}
+
+    @pytest.mark.asyncio
+    async def test_emits_tool_end_on_tool_message(self):
+        tool_msg = ToolMessage(
+            content="4",
+            name="calculator",
+            tool_call_id="call_abc",
+        )
+        text_chunk = AIMessageChunk(content="Resultado: 4")
+        events = [
+            (tool_msg, {"langgraph_node": "tools"}),
+            (text_chunk, {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        assert results[0] == {
+            "type": "tool_end",
+            "name": "calculator",
+            "call_id": "call_abc",
+            "output": "4",
+        }
+        assert results[1] == {"type": "token", "content": "Resultado: 4"}
+
+    @pytest.mark.asyncio
+    async def test_no_duplicate_tool_start_for_same_id(self):
+        chunk1 = AIMessageChunk(content="")
+        chunk1.tool_call_chunks = [
+            {"name": "calculator", "args": "", "id": "call_abc", "index": 0}
+        ]
+        chunk2 = AIMessageChunk(content="")
+        chunk2.tool_call_chunks = [
+            {"name": "calculator", "args": '{"expression": "2+2"}', "id": "call_abc", "index": 0}
+        ]
+        events = [
+            (chunk1, {"langgraph_node": "assistant"}),
+            (chunk2, {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        results = [ev async for ev in stream_chat(graph, "oi", max_tool_steps=5, thread_id="t")]
+        tool_starts = [e for e in results if e["type"] == "tool_start"]
+        assert len(tool_starts) == 1

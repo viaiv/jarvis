@@ -23,14 +23,15 @@ async def _stream_response(
     console.print("Jarvis:")
     accumulated = ""
     with Live(Markdown(""), refresh_per_second=8, console=console) as live:
-        async for token in stream_chat(
+        async for event in stream_chat(
             graph=graph,
             user_input=user_input,
             max_tool_steps=max_tool_steps,
             thread_id=thread_id,
         ):
-            accumulated += token
-            live.update(Markdown(accumulated))
+            if event["type"] == "token":
+                accumulated += event["content"]
+                live.update(Markdown(accumulated))
     if not accumulated:
         console.print("Nao foi possivel gerar resposta.")
 

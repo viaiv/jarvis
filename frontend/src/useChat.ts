@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage, ConnectionStatus } from './types'
+import type { ChatMessage, ConnectionStatus, ToolCall } from './types'
 
 const WS_URL = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
 
@@ -37,6 +37,34 @@ export function useChat() {
           setMessages((prev) =>
             prev.map((m) =>
               m.id === id ? { ...m, content: m.content + data.content } : m,
+            ),
+          )
+        } else if (data.type === 'tool_start') {
+          const id = assistantIdRef.current
+          if (!id) return
+          const tool: ToolCall = { name: data.name, callId: data.call_id }
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === id
+                ? { ...m, toolCalls: [...(m.toolCalls || []), tool] }
+                : m,
+            ),
+          )
+        } else if (data.type === 'tool_end') {
+          const id = assistantIdRef.current
+          if (!id) return
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === id
+                ? {
+                    ...m,
+                    toolCalls: (m.toolCalls || []).map((tc) =>
+                      tc.callId === data.call_id
+                        ? { ...tc, output: data.output }
+                        : tc,
+                    ),
+                  }
+                : m,
             ),
           )
         } else if (data.type === 'end') {
