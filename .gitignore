@@ -1,0 +1,10 @@
+.env
+.venv/
+.jarvis_memory.json
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/

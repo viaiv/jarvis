@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "Assistente para aprender LangChain e LangGraph"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "langchain>=0.3.0",
+  "langchain-openai>=0.3.0",
+  "langgraph>=1.0.0",
+  "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+jarvis-chat = "jarvis.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
