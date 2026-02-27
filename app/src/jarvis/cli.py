@@ -2,7 +2,7 @@ import argparse
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from .chat import invoke_chat
+from .chat import stream_chat
 from .config import apply_cli_overrides, load_settings
 from .graph import build_graph
 
@@ -75,13 +75,15 @@ def run_interactive_chat(
             print("Encerrando.")
             return
 
-        answer = invoke_chat(
+        print("Jarvis: ", end="", flush=True)
+        for token in stream_chat(
             graph=graph,
             user_input=user_input,
             max_tool_steps=max_tool_steps,
             thread_id=session_id,
-        )
-        print(f"Jarvis: {answer}")
+        ):
+            print(token, end="", flush=True)
+        print()
 
 
 def main() -> None:
@@ -105,13 +107,15 @@ def main() -> None:
         )
 
         if args.message:
-            answer = invoke_chat(
+            print("Jarvis: ", end="", flush=True)
+            for token in stream_chat(
                 graph=graph,
                 user_input=args.message,
                 max_tool_steps=settings.max_tool_steps,
                 thread_id=settings.session_id,
-            )
-            print(f"Jarvis: {answer}")
+            ):
+                print(token, end="", flush=True)
+            print()
             return
 
         if settings.persist_memory:

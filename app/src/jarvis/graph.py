@@ -49,7 +49,7 @@ def build_graph(
     history_window: int,
     checkpointer=None,
 ):
-    model = ChatOpenAI(model=model_name, temperature=0).bind_tools(ALL_TOOLS)
+    model = ChatOpenAI(model=model_name, temperature=0, streaming=True).bind_tools(ALL_TOOLS)
     tool_node = ToolNode(ALL_TOOLS)
 
     def assistant_node(state: GraphState) -> dict:

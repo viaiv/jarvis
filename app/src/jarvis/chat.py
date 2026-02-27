@@ -1,6 +1,6 @@
-from typing import Any, List
+from typing import Any, Generator, List
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage, HumanMessage
 from langgraph.errors import GraphRecursionError
 
 TOOL_LIMIT_MESSAGE = (
@@ -66,3 +66,57 @@ def invoke_chat(
     if not answer:
         return "Nao foi possivel gerar resposta."
     return answer
+
+
+def stream_chat(
+    graph,
+    user_input: str,
+    max_tool_steps: int,
+    thread_id: str,
+) -> Generator[str, None, None]:
+    """Stream tokens from the graph one by one."""
+    recursion_limit = max(6, 2 * max_tool_steps + 4)
+
+    emitted = False
+    hit_tool_limit = False
+
+    try:
+        for chunk, metadata in graph.stream(
+            {
+                "messages": [HumanMessage(content=user_input)],
+                "tool_steps": 0,
+                "max_tool_steps": max_tool_steps,
+            },
+            config={
+                "recursion_limit": recursion_limit,
+                "configurable": {"thread_id": thread_id},
+            },
+            stream_mode="messages",
+        ):
+            if metadata.get("langgraph_node") != "assistant":
+                continue
+
+            if (
+                isinstance(chunk, AIMessageChunk)
+                and getattr(chunk, "tool_call_chunks", None)
+            ):
+                hit_tool_limit = True
+                continue
+
+            if isinstance(chunk, AIMessageChunk) and chunk.content:
+                text = chunk.content if isinstance(chunk.content, str) else ""
+                if text:
+                    hit_tool_limit = False
+                    emitted = True
+                    yield text
+
+    except GraphRecursionError:
+        yield TOOL_LIMIT_MESSAGE
+        return
+
+    if hit_tool_limit and not emitted:
+        yield TOOL_LIMIT_MESSAGE
+        return
+
+    if not emitted:
+        yield "Nao foi possivel gerar resposta."

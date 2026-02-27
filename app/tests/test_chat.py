@@ -1,8 +1,10 @@
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage
+from langgraph.errors import GraphRecursionError
 
 from jarvis.chat import (
     TOOL_LIMIT_MESSAGE,
     invoke_chat,
+    stream_chat,
 )
 
 
@@ -119,4 +121,77 @@ class TestInvokeChat:
             max_tool_steps=5,
             thread_id="minha-sessao",
         )
+        assert graph.captured_config["configurable"]["thread_id"] == "minha-sessao"
+
+
+class FakeStreamGraph:
+    """Simula graph.stream() retornando (AIMessageChunk, metadata)."""
+
+    def __init__(self, events=None, raise_recursion=False):
+        self.events = events or []
+        self.raise_recursion = raise_recursion
+        self.captured_config = None
+
+    def stream(self, state, config=None, stream_mode=None):
+        self.captured_config = config
+        if self.raise_recursion:
+            raise GraphRecursionError("recursion limit")
+        yield from self.events
+
+
+class TestStreamChat:
+    def test_yields_tokens(self):
+        events = [
+            (AIMessageChunk(content="Ola"), {"langgraph_node": "assistant"}),
+            (AIMessageChunk(content=" mundo"), {"langgraph_node": "assistant"}),
+            (AIMessageChunk(content="!"), {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        tokens = list(stream_chat(graph, "oi", max_tool_steps=5, thread_id="t"))
+        assert tokens == ["Ola", " mundo", "!"]
+
+    def test_filters_non_assistant_nodes(self):
+        events = [
+            (AIMessageChunk(content="ignorar"), {"langgraph_node": "tools"}),
+            (AIMessageChunk(content="ok"), {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        tokens = list(stream_chat(graph, "oi", max_tool_steps=5, thread_id="t"))
+        assert tokens == ["ok"]
+
+    def test_skips_empty_content_chunks(self):
+        events = [
+            (AIMessageChunk(content=""), {"langgraph_node": "assistant"}),
+            (AIMessageChunk(content="texto"), {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        tokens = list(stream_chat(graph, "oi", max_tool_steps=5, thread_id="t"))
+        assert tokens == ["texto"]
+
+    def test_recursion_error_yields_tool_limit(self):
+        graph = FakeStreamGraph(raise_recursion=True)
+        tokens = list(stream_chat(graph, "oi", max_tool_steps=5, thread_id="t"))
+        assert tokens == [TOOL_LIMIT_MESSAGE]
+
+    def test_no_content_yields_fallback(self):
+        graph = FakeStreamGraph(events=[])
+        tokens = list(stream_chat(graph, "oi", max_tool_steps=5, thread_id="t"))
+        assert tokens == ["Nao foi possivel gerar resposta."]
+
+    def test_tool_limit_when_only_tool_chunks(self):
+        chunk = AIMessageChunk(content="")
+        chunk.tool_call_chunks = [{"name": "calc", "args": "", "id": "1", "index": 0}]
+        events = [
+            (chunk, {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        tokens = list(stream_chat(graph, "oi", max_tool_steps=5, thread_id="t"))
+        assert tokens == [TOOL_LIMIT_MESSAGE]
+
+    def test_config_includes_thread_id(self):
+        events = [
+            (AIMessageChunk(content="ok"), {"langgraph_node": "assistant"}),
+        ]
+        graph = FakeStreamGraph(events=events)
+        list(stream_chat(graph, "oi", max_tool_steps=5, thread_id="minha-sessao"))
         assert graph.captured_config["configurable"]["thread_id"] == "minha-sessao"
