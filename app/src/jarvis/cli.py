@@ -1,12 +1,37 @@
 import argparse
 
 from langgraph.checkpoint.sqlite import SqliteSaver
+from rich.console import Console
+from rich.live import Live
+from rich.markdown import Markdown
 
 from .chat import stream_chat
 from .config import apply_cli_overrides, load_settings
 from .graph import build_graph
 
 EXIT_COMMANDS = {"sair", "exit", "quit"}
+
+
+def _stream_response(
+    console: Console,
+    graph,
+    user_input: str,
+    max_tool_steps: int,
+    thread_id: str,
+) -> None:
+    console.print("Jarvis:")
+    accumulated = ""
+    with Live(Markdown(""), refresh_per_second=8, console=console) as live:
+        for token in stream_chat(
+            graph=graph,
+            user_input=user_input,
+            max_tool_steps=max_tool_steps,
+            thread_id=thread_id,
+        ):
+            accumulated += token
+            live.update(Markdown(accumulated))
+    if not accumulated:
+        console.print("Nao foi possivel gerar resposta.")
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,6 +75,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def run_interactive_chat(
+    console: Console,
     graph,
     max_tool_steps: int,
     session_id: str,
@@ -75,15 +101,13 @@ def run_interactive_chat(
             print("Encerrando.")
             return
 
-        print("Jarvis: ", end="", flush=True)
-        for token in stream_chat(
+        _stream_response(
+            console=console,
             graph=graph,
             user_input=user_input,
             max_tool_steps=max_tool_steps,
             thread_id=session_id,
-        ):
-            print(token, end="", flush=True)
-        print()
+        )
 
 
 def main() -> None:
@@ -97,6 +121,7 @@ def main() -> None:
     )
 
     conn_string = settings.db_path if settings.persist_memory else ":memory:"
+    console = Console()
 
     with SqliteSaver.from_conn_string(conn_string) as checkpointer:
         graph = build_graph(
@@ -107,21 +132,20 @@ def main() -> None:
         )
 
         if args.message:
-            print("Jarvis: ", end="", flush=True)
-            for token in stream_chat(
+            _stream_response(
+                console=console,
                 graph=graph,
                 user_input=args.message,
                 max_tool_steps=settings.max_tool_steps,
                 thread_id=settings.session_id,
-            ):
-                print(token, end="", flush=True)
-            print()
+            )
             return
 
         if settings.persist_memory:
             print(f"Sessao: {settings.session_id}")
 
         run_interactive_chat(
+            console=console,
             graph=graph,
             max_tool_steps=settings.max_tool_steps,
             session_id=settings.session_id,
