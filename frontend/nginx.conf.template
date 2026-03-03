@@ -1,3 +1,7 @@
+# Buffers para headers/cookies grandes (EasyPanel/Traefik injeta headers extras)
+# Precisa estar no nivel http (fora do server block) para funcionar antes do parsing
+large_client_header_buffers 4 32k;
+
 server {
     listen 80;
     server_name _;
@@ -5,8 +9,7 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
-    # Buffers para headers/cookies grandes (EasyPanel/Traefik injeta headers extras)
-    large_client_header_buffers 4 32k;
+    # Proxy buffers
     proxy_buffer_size 16k;
     proxy_buffers 4 16k;
 
