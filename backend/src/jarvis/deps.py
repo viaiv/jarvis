@@ -6,7 +6,6 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import jwt as pyjwt
 
 from .auth import decode_token
-from .db import get_user_by_id
 
 security = HTTPBearer()
 
@@ -34,7 +33,8 @@ async def get_current_user(
         )
 
     conn = request.app.state.auth_db
-    user = await get_user_by_id(conn, payload.sub)
+    db_mod = request.app.state.db_module
+    user = await db_mod.get_user_by_id(conn, payload.sub)
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -8,15 +8,18 @@ Projeto educacional para aprender tool calling, grafos de agentes e memória per
 - **Linguagem**: Python 3.11+
 - **LLM Framework**: LangChain + LangGraph
 - **Modelo padrão**: gpt-4.1-mini (configurável via `.env`)
-- **Persistência**: SQLite via `langgraph-checkpoint-sqlite`
-- **Auth**: JWT stateless (PyJWT + bcrypt), SQLite separado para auth
+- **Persistência**: SQLite ou PostgreSQL via factory (`checkpoint.py`, `db_factory.py`)
+- **Auth**: JWT stateless (PyJWT + bcrypt), SQLite ou PostgreSQL para auth
+- **Cache**: Redis opcional para tools do Cartola FC (`cache.py`)
 - **CLI**: argparse + Rich (streaming com Markdown)
 - **API**: FastAPI + Uvicorn
 - **Frontend**: React + Vite + TypeScript + React Router v7
+- **Migrations**: Alembic (migrations manuais com SQL raw)
 - **Testes**: pytest + pytest-asyncio
 
 Mapa de diretórios:
 - `backend/src/jarvis/` — Código principal do assistente (Python/FastAPI)
+- `backend/src/jarvis/cartola/` — Ferramentas do Cartola FC (client HTTP, tools, scraper)
 - `backend/tests/` — Testes unitários
 - `frontend/` — Interface web (React + Vite + TypeScript)
 - `trilha/` — Documentação incremental da trilha de aprendizado (etapas 00–06)
@@ -36,12 +39,20 @@ cd frontend && npm install
 jarvis-chat "Pergunta aqui"   # single-turn
 jarvis-chat                    # modo interativo (multi-turno)
 
-# Executar frontend (dev)
+# Dev (backend + frontend juntos)
+python run.py                      # checks, migrations, pergunta porta, sobe tudo
+
+# Executar frontend (dev, standalone)
 cd frontend && npm run dev
 
 # Testes
 cd backend && python -m pytest tests/ -v
 python -m pytest tests/test_tools.py -v   # teste individual
+
+# Alembic (migrations manuais — apenas com PostgreSQL)
+cd backend && alembic upgrade head    # aplica migrations
+cd backend && alembic current         # verifica versao atual
+cd backend && alembic history         # lista migrations
 
 # Variáveis de ambiente
 cp backend/.env.example .env       # configurar OPENAI_API_KEY
@@ -55,7 +66,7 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - O nó `tools` executa as ferramentas e incrementa o contador
 - Sem `tool_calls` → encerra
 - `_sanitize_tool_sequences` valida consistência de tool calls no histórico antes de enviar ao modelo
-- `_trim_and_prepend_system` aplica janela de histórico + sanitização + system prompt
+- `_trim_and_prepend_system` conta turnos humanos (HumanMessage) para trimming — preserva blocos completos de tool calls dentro de cada turno
 
 ## Streaming e Protocolo WebSocket
 
@@ -76,7 +87,8 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 ## Autenticacao e Multi-usuario
 
 - JWT stateless com access token (30min) e refresh token (7 dias)
-- Banco auth separado (`.jarvis-auth.db`) via aiosqlite — tabelas: `users`, `global_config`, `user_config`
+- Banco auth: SQLite (`.jarvis-auth.db`) ou PostgreSQL (via `DATABASE_URL`) — tabelas: `users`, `global_config`, `user_config`
+- `db_factory.py` seleciona backend automaticamente: `create_auth_db()`, `get_db_module()`, `get_integrity_error()`
 - Senhas com bcrypt (hash direto, sem passlib)
 - PyJWT: `sub` claim e string (`str(user_id)` / `int(data["sub"])`)
 - Endpoints: `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`
@@ -99,6 +111,80 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - Layout com sidebar (Usuarios, Logs, Config) + link para voltar ao chat
 - `adminApi.ts`: client tipado para todos os endpoints admin
 - Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `ConfigPage` (editor global/por usuario)
+
+## Cartola FC Tools
+
+Subpacote `backend/src/jarvis/cartola/` com 5 ferramentas para o Cartola FC:
+
+- `cartola_market_status` — Status do mercado (rodada, fechamento, times escalados)
+- `cartola_players` — Busca jogadores com filtros (posicao, clube, preco, media, status)
+- `cartola_round_scores` — Top pontuadores de uma rodada com scouts
+- `cartola_matches` — Partidas de uma rodada com placares
+- `cartola_expert_tips` — Dicas de especialistas via Firecrawl (dependencia opcional)
+
+Arquitetura:
+- `client.py`: HTTP client usando `urllib.request` (sem dependencia extra), constantes de mapeamento, cache Redis opcional via `cached_get()`
+- `tools.py`: 5 `@tool` functions registradas em `CARTOLA_TOOLS`, importadas por `tools.py` → `ALL_TOOLS`
+- `scraper.py`: Import lazy de `firecrawl-py`, `FIRECRAWL_API_KEY` via `os.getenv`
+- `cache.py`: Wrapper Redis com `get_redis()` e `cached_get(key, ttl, fetch_fn)` — fallback sem Redis
+- API publica: `api.cartola.globo.com` (sem autenticacao)
+- Cache Redis: market_status=5min, players=10min, scored=5min, matches=30min
+- Zero mudanca no grafo/chat/api — integracao via `ALL_TOOLS`
+- System prompt (`DEFAULT_SYSTEM_PROMPT`) instrui o LLM a usar ferramentas cartola_* proativamente e guia montagem de escalacoes passo a passo
+
+## Startup (run.py)
+
+`run.py` na raiz do projeto substitui o antigo `dev.sh`. Fluxo:
+
+1. Verifica Python >= 3.11
+2. Verifica `.env` (warn se ausente)
+3. Verifica pacote `jarvis` instalado
+4. Verifica `frontend/node_modules/` (warn se ausente)
+5. Se `DATABASE_URL` configurado: testa conexao PostgreSQL via `asyncpg`
+6. Se `REDIS_URL` configurado: testa conexao Redis via `redis.ping()`
+7. Se PostgreSQL: roda `alembic upgrade head` (ou `stamp head` se banco pre-existente sem alembic_version)
+8. Pergunta porta (default 8000)
+9. Sobe `jarvis-api` + `npm run dev` como subprocessos
+
+Funcoes utilitarias exportadas: `check_python_version()`, `check_env_file()`, `parse_port()` — testadas em `test_run.py`.
+
+## Alembic Migrations
+
+- Config em `backend/alembic.ini`, `backend/alembic/env.py`
+- Migrations manuais com SQL raw em `backend/alembic/versions/`
+- `env.py` resolve URL dinamicamente: `DATABASE_URL` → `postgresql+psycopg://`, senao `sqlite:///`
+- Migration `001_initial_auth_schema.py`: cria tabelas `users`, `user_config`, `global_config` (detecta dialect para DDL correto)
+- Bancos pre-existentes (criados pelo `CREATE IF NOT EXISTS`): `run.py` detecta e faz `alembic stamp head`
+- SQLite: tabelas continuam sendo criadas em runtime via `db.py` (Alembic e skip)
+- Novas migrations: `cd backend && alembic revision -m "descricao"` e editar manualmente
+
+## Docker (Deploy / EasyPanel)
+
+Dockerfiles separados para backend e frontend, pensados para EasyPanel (cada servico = container independente).
+
+Arquivos:
+- `backend/Dockerfile` — Multi-stage build (python:3.12-slim): builder instala pacote, runtime copia site-packages + Alembic config
+- `backend/entrypoint.sh` — Roda `alembic upgrade head` se `DATABASE_URL` definido, depois sobe uvicorn
+- `frontend/Dockerfile` — Multi-stage build (node:22-alpine + nginx:alpine): build com `npm ci` + `npm run build`, serve com nginx
+- `frontend/nginx.conf.template` — Template nginx com `$BACKEND_URL` (envsubst): proxy `/ws`, `/auth`, `/chat`, `/admin/(users|config|logs)` para backend, SPA fallback para React Router
+- `.dockerignore` — Exclui .venv, node_modules, .env, .git, *.db, caches
+
+Nginx distingue rotas frontend (SPA) vs backend (API):
+- `/admin/(users|config|logs)` → proxy backend (API endpoints)
+- `/admin` (pagina), `/login`, `/` → try_files (SPA React Router)
+- `/ws` → WebSocket proxy com upgrade
+- `/auth`, `/chat` → proxy backend
+
+Build:
+```bash
+docker build -t jarvis-backend -f backend/Dockerfile ./backend
+docker build -t jarvis-frontend -f frontend/Dockerfile ./frontend
+```
+
+EasyPanel:
+1. Servico backend: Dockerfile `backend/Dockerfile`, env vars: `OPENAI_API_KEY`, `JWT_SECRET`, `DATABASE_URL`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `REDIS_URL` (opcional)
+2. Servico frontend: Dockerfile `frontend/Dockerfile`, env var: `BACKEND_URL=http://<nome-backend>:8000`
+3. Frontend exposto com dominio/HTTPS. Trafego API proxied pelo nginx para o backend via rede interna Docker.
 
 ## Estilo de Código
 

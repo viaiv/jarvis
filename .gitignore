@@ -10,4 +10,7 @@ build/
 *.egg-info/*.local.*
 CLAUDE.local.md
 .jarvis.db
+.jarvis-auth.db
+*.db-shm
+*.db-wal
 node_modules/

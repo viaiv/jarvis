@@ -7,6 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from jarvis.api import app
 from jarvis.auth import create_access_token
 from jarvis.config import Settings
+from jarvis import db
 from jarvis.db import create_user, init_db
 
 
@@ -45,6 +46,7 @@ async def setup_admin():
 
     app.state.settings = settings
     app.state.auth_db = conn
+    app.state.db_module = db
     app.state.graph = None
 
     admin_token = create_access_token(admin["id"], admin["role"], JWT_SECRET)
@@ -59,7 +61,7 @@ async def setup_admin():
     }
 
     await conn.close()
-    for attr in ("graph", "settings", "auth_db"):
+    for attr in ("graph", "settings", "auth_db", "db_module"):
         if hasattr(app.state, attr):
             delattr(app.state, attr)
 

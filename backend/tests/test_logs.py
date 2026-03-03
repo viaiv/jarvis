@@ -4,7 +4,21 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from jarvis.config import Settings
 from jarvis.logs import get_thread_messages, list_threads
+
+
+def _make_settings(db_path: str) -> Settings:
+    """Cria Settings minimo para testes de logs."""
+    return Settings(
+        system_prompt="test",
+        model_name="gpt-test",
+        history_window=3,
+        max_tool_steps=5,
+        db_path=db_path,
+        session_id="test",
+        persist_memory=False,
+    )
 
 
 async def _seed_checkpoint(checkpointer, thread_id: str, messages: list):
@@ -37,7 +51,8 @@ class TestListThreads:
         async with AsyncSqliteSaver.from_conn_string(db_path) as saver:
             await saver.setup()
 
-        threads, total = await list_threads(db_path)
+        settings = _make_settings(db_path)
+        threads, total = await list_threads(settings)
         assert threads == []
         assert total == 0
 
@@ -54,7 +69,8 @@ class TestListThreads:
                 [HumanMessage(content="hey")],
             )
 
-        threads, total = await list_threads(db_path)
+        settings = _make_settings(db_path)
+        threads, total = await list_threads(settings)
         assert total == 2
         assert len(threads) == 2
 
@@ -75,7 +91,8 @@ class TestListThreads:
                 [HumanMessage(content="b")],
             )
 
-        threads, total = await list_threads(db_path, user_id=1)
+        settings = _make_settings(db_path)
+        threads, total = await list_threads(settings, user_id=1)
         assert total == 1
         assert threads[0]["user_id"] == 1
 
@@ -89,11 +106,12 @@ class TestListThreads:
                     [HumanMessage(content=f"msg-{i}")],
                 )
 
-        threads, total = await list_threads(db_path, limit=2, offset=0)
+        settings = _make_settings(db_path)
+        threads, total = await list_threads(settings, limit=2, offset=0)
         assert total == 5
         assert len(threads) == 2
 
-        threads2, _ = await list_threads(db_path, limit=2, offset=2)
+        threads2, _ = await list_threads(settings, limit=2, offset=2)
         assert len(threads2) == 2
 
         all_ids = {t["thread_id"] for t in threads + threads2}
@@ -110,7 +128,8 @@ class TestGetThreadMessages:
                 [HumanMessage(content="Ola"), AIMessage(content="Oi!")],
             )
 
-        messages = await get_thread_messages(db_path, "1:test")
+        async with AsyncSqliteSaver.from_conn_string(db_path) as saver:
+            messages = await get_thread_messages(saver, "1:test")
         assert len(messages) == 2
         assert messages[0]["role"] == "user"
         assert messages[0]["content"] == "Ola"
@@ -123,5 +142,6 @@ class TestGetThreadMessages:
         async with AsyncSqliteSaver.from_conn_string(db_path) as saver:
             await saver.setup()
 
-        messages = await get_thread_messages(db_path, "nonexistent")
+        async with AsyncSqliteSaver.from_conn_string(db_path) as saver:
+            messages = await get_thread_messages(saver, "nonexistent")
         assert messages == []

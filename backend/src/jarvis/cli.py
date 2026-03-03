@@ -1,12 +1,12 @@
 import argparse
 import asyncio
 
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
 
 from .chat import stream_chat
+from .checkpoint import create_checkpointer
 from .config import apply_cli_overrides, load_settings
 from .graph import build_graph
 
@@ -122,10 +122,9 @@ async def _async_main() -> None:
         disable_memory=args.no_memory,
     )
 
-    conn_string = settings.db_path if settings.persist_memory else ":memory:"
     console = Console()
 
-    async with AsyncSqliteSaver.from_conn_string(conn_string) as checkpointer:
+    async with create_checkpointer(settings) as checkpointer:
         graph = build_graph(
             model_name=settings.model_name,
             system_prompt=settings.system_prompt,

@@ -11,17 +11,22 @@ Projeto de estudo para aprender `LangChain` e `LangGraph` por etapas.
 Arquitetura atual do backend (`backend/src/jarvis/`):
 
 - `cli.py`: interface de linha de comando e loop interativo.
-- `config.py`: leitura e validacao de configuracoes do `.env`, campos auth/JWT.
-- `tools.py`: ferramentas disponiveis para o agente.
+- `config.py`: leitura e validacao de configuracoes do `.env`, campos auth/JWT/infra, system prompt com instrucoes Cartola FC.
+- `tools.py`: ferramentas disponiveis para o agente (calculator, current_time + Cartola FC).
+- `cartola/`: subpacote com ferramentas do Cartola FC (client HTTP, tools, scraper).
 - `graph.py`: definicao e compilacao do fluxo no LangGraph + sanitizacao de historico.
 - `graph_cache.py`: LRU cache de grafos compilados por config.
 - `chat.py`: streaming de eventos tipados (token, tool_start, tool_end) e invocacao do grafo.
 - `api.py`: API REST (HTTP + WebSocket) com FastAPI, auth JWT.
 - `auth.py`: hash bcrypt, JWT encode/decode.
-- `db.py`: banco auth (aiosqlite) com CRUD users e config.
+- `db.py`: banco auth SQLite (aiosqlite) com CRUD users e config.
+- `db_postgres.py`: banco auth PostgreSQL (asyncpg), mesma interface que `db.py`.
+- `db_factory.py`: factory que seleciona SQLite ou PostgreSQL baseado em `DATABASE_URL`.
+- `checkpoint.py`: factory de checkpointer (AsyncSqliteSaver ou AsyncPostgresSaver).
+- `cache.py`: wrapper Redis com `cached_get()` e fallback sem Redis.
 - `deps.py`: FastAPI dependencies para autenticacao.
 - `admin.py`: APIRouter `/admin` com CRUD usuarios, config e logs.
-- `logs.py`: extracao read-only de threads e mensagens do checkpoint.
+- `logs.py`: extracao read-only de threads e mensagens do checkpoint (SQLite ou PostgreSQL).
 - `schemas.py`: Pydantic models para auth, admin e logs.
 
 ## Setup rapido
@@ -60,9 +65,55 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=senha-do-admin
 ```
 
+### Infraestrutura opcional
+
+Por padrao, o Jarvis usa SQLite para tudo (zero config). Para produção, configure PostgreSQL e/ou Redis:
+
+```env
+# PostgreSQL (auth + checkpoint — substitui SQLite)
+DATABASE_URL=postgresql://user:pass@localhost:5432/jarvis
+
+# Redis (cache para tools do Cartola FC)
+REDIS_URL=redis://localhost:6379
+```
+
+Sem essas variaveis, tudo continua funcionando com SQLite e sem cache (backward compatible).
+
+## Desenvolvimento
+
+Para subir backend + frontend juntos:
+
+```bash
+python run.py
+```
+
+O script verifica dependencias (Python, backend, frontend), testa conectividade com PostgreSQL e Redis (se configurados), roda migrations do Alembic (se PostgreSQL), pergunta a porta do backend (default 8000) e sobe ambos os processos. O proxy do Vite aponta automaticamente para a porta escolhida.
+
+Para usar uma porta customizada sem o script:
+
+```bash
+JARVIS_PORT=9000 jarvis-api
+```
+
+### Migrations (Alembic)
+
+Com PostgreSQL configurado, `run.py` roda `alembic upgrade head` automaticamente. Para gerenciar migrations manualmente:
+
+```bash
+cd backend
+alembic upgrade head      # aplica migrations pendentes
+alembic current           # verifica versao atual
+alembic history           # lista migrations
+alembic revision -m "descricao"  # cria nova migration
+```
+
+Com SQLite (default), tabelas sao criadas em runtime via `db.py` e Alembic e ignorado.
+
 ## Autenticacao
 
 A API usa JWT stateless para autenticacao. No primeiro boot, um usuario admin e criado automaticamente com as credenciais definidas no `.env`.
+
+O banco de auth usa SQLite por padrao (`.jarvis-auth.db`) ou PostgreSQL quando `DATABASE_URL` esta configurado. A selecao e automatica via `db_factory.py`.
 
 - `POST /auth/login` — retorna access + refresh token
 - `POST /auth/refresh` — renova access token
@@ -109,7 +160,7 @@ Configurar memoria curta e limite de tools no `.env`:
 
 ```env
 JARVIS_HISTORY_WINDOW=3
-JARVIS_MAX_TOOL_STEPS=5
+JARVIS_MAX_TOOL_STEPS=10
 JARVIS_SESSION_ID=default
 JARVIS_PERSIST_MEMORY=true
 ```
@@ -123,24 +174,49 @@ jarvis-chat --session-id estudo
 jarvis-chat --no-memory
 ```
 
-### Tools iniciais
+### Tools
 
 - `calculator(expression)`: calculos aritmeticos.
 - `current_time(timezone_name)`: horario atual por fuso (ex.: `UTC`, `America/Sao_Paulo`).
 
+#### Cartola FC
+
+5 ferramentas para consultar dados do Cartola FC via API publica (`api.cartola.globo.com`):
+
+- `cartola_market_status`: status do mercado (rodada, fechamento, times escalados).
+- `cartola_players`: busca jogadores com filtros (posicao, clube, preco, media, status).
+- `cartola_round_scores`: top pontuadores de uma rodada com scouts.
+- `cartola_matches`: partidas de uma rodada com placares.
+- `cartola_expert_tips`: dicas de especialistas via Firecrawl (requer `FIRECRAWL_API_KEY`).
+
+Respostas da API sao cacheadas automaticamente no Redis quando `REDIS_URL` esta configurado (TTLs de 5 a 30 minutos). Sem Redis, funciona normalmente sem cache.
+
+Para usar dicas de especialistas, instale a dependencia opcional:
+
+```bash
+pip install -e "./backend[cartola]"
+```
+
+E configure no `.env`:
+
+```env
+FIRECRAWL_API_KEY=fc-...
+```
+
 Exemplos:
 
 ```bash
-jarvis-chat "Quanto e (15 + 7) * 3?"
-jarvis-chat "Que horas sao em America/Sao_Paulo?"
+jarvis-chat "Qual o status do mercado do Cartola?"
+jarvis-chat "Me mostra os melhores atacantes provaveis ate 15 cartoletas"
+jarvis-chat "Quem mais pontuou na ultima rodada?"
+jarvis-chat "Quais os jogos da proxima rodada?"
 ```
 
 ### Memoria persistente
 
-- A conversa e salva por sessao em SQLite (`.jarvis.db`) via checkpointer do LangGraph.
+- A conversa e salva por sessao via checkpointer do LangGraph (SQLite ou PostgreSQL via `checkpoint.py`).
 - Ao reiniciar o app, o historico da sessao e recarregado automaticamente.
-- A janela curta (`JARVIS_HISTORY_WINDOW`) limita o contexto enviado ao modelo,
-  mas o historico completo continua salvo no banco.
+- A janela curta (`JARVIS_HISTORY_WINDOW`) conta turnos humanos (HumanMessage), nao mensagens individuais — preserva blocos completos de tool calls dentro de cada turno.
 - `_sanitize_tool_sequences` garante que o historico trimado nao contenha
   sequencias incompletas de tool calls (evita erros da API da OpenAI).
 
@@ -192,6 +268,51 @@ O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
 - `src/pages/admin/LogsPage.tsx`: viewer de conversas.
 - `src/pages/admin/ConfigPage.tsx`: editor de config global e por usuario.
 - `src/api/adminApi.ts`: client tipado para endpoints admin.
+
+## Docker (Deploy)
+
+O projeto inclui Dockerfiles separados para backend e frontend, prontos para deploy no EasyPanel ou qualquer plataforma com containers.
+
+### Build
+
+```bash
+docker build -t jarvis-backend -f backend/Dockerfile ./backend
+docker build -t jarvis-frontend -f frontend/Dockerfile ./frontend
+```
+
+### Teste local com Docker
+
+```bash
+docker network create jarvis-net
+
+docker run -d --name backend --network jarvis-net \
+  -e OPENAI_API_KEY=sk-... \
+  -e JWT_SECRET=secret \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD=admin \
+  jarvis-backend
+
+docker run -d --name frontend --network jarvis-net \
+  -e BACKEND_URL=http://backend:8000 \
+  -p 3000:80 \
+  jarvis-frontend
+```
+
+Acesse `http://localhost:3000`.
+
+### EasyPanel
+
+1. **Servico backend**: Dockerfile `backend/Dockerfile`. Env vars: `OPENAI_API_KEY`, `JWT_SECRET`, `DATABASE_URL` (PostgreSQL), `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `REDIS_URL` (opcional).
+2. **Servico frontend**: Dockerfile `frontend/Dockerfile`. Env var: `BACKEND_URL=http://<nome-servico-backend>:8000`.
+3. Exponha o frontend com dominio/HTTPS. O nginx interno do frontend faz proxy reverso para o backend pela rede Docker.
+
+### Arquivos Docker
+
+- `backend/Dockerfile` — Multi-stage (python:3.12-slim): instala pacote + copia Alembic config
+- `backend/entrypoint.sh` — Roda migrations (se PostgreSQL) e sobe uvicorn
+- `frontend/Dockerfile` — Multi-stage (node:22-alpine + nginx:alpine): build + serve estatico
+- `frontend/nginx.conf.template` — Nginx com proxy reverso (envsubst `$BACKEND_URL`), WebSocket upgrade, SPA fallback
+- `.dockerignore` — Exclui .venv, node_modules, .env, .git, *.db
 
 ## Trilha
 

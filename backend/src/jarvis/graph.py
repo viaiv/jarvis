@@ -1,6 +1,12 @@
 from typing import Annotated, List, TypedDict
 
-from langchain_core.messages import AIMessage, BaseMessage, SystemMessage, ToolMessage
+from langchain_core.messages import (
+    AIMessage,
+    BaseMessage,
+    HumanMessage,
+    SystemMessage,
+    ToolMessage,
+)
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
@@ -77,11 +83,17 @@ def _trim_and_prepend_system(
     non_system = [m for m in messages if not isinstance(m, SystemMessage)]
 
     if history_window > 0:
-        # Mantemos a ultima mensagem (HumanMessage atual) + history_window pares anteriores
-        # O ultimo elemento e sempre o HumanMessage atual
-        max_history_msgs = history_window * 2
-        if len(non_system) > max_history_msgs + 1:
-            non_system = non_system[-(max_history_msgs + 1):]
+        # Conta apenas turnos humanos (HumanMessage) ao inves de todas as mensagens.
+        # Isso evita que tool calls (AIMessage+ToolMessage) consumam a janela de contexto.
+        human_indices = [
+            i for i, m in enumerate(non_system) if isinstance(m, HumanMessage)
+        ]
+
+        if len(human_indices) > history_window + 1:
+            # Manter os ultimos (history_window + 1) turnos humanos
+            # +1 porque o ultimo e a mensagem atual do usuario
+            cut_index = human_indices[-(history_window + 1)]
+            non_system = non_system[cut_index:]
     elif history_window == 0:
         # Apenas a mensagem atual
         if non_system:

@@ -14,9 +14,13 @@ class FakeCredentials:
 
 
 class FakeAppState:
-    def __init__(self, settings, auth_db):
+    def __init__(self, settings, auth_db, db_module=None):
         self.settings = settings
         self.auth_db = auth_db
+        if db_module is None:
+            from jarvis import db
+            db_module = db
+        self.db_module = db_module
 
 
 class FakeRequest:

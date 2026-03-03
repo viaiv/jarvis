@@ -1,10 +1,10 @@
+import os
 from contextlib import asynccontextmanager
 
 import jwt as pyjwt
 import uvicorn
 from fastapi import Depends, FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from pydantic import BaseModel
 
 from .admin import router as admin_router
@@ -15,8 +15,9 @@ from .auth import (
     verify_password,
 )
 from .chat import invoke_chat, stream_chat
+from .checkpoint import create_checkpointer
 from .config import load_settings
-from .db import get_user_by_id, get_user_by_username, init_db, seed_admin_if_needed
+from .db_factory import create_auth_db, get_db_module
 from .deps import get_current_active_user
 from .graph import build_graph
 from .schemas import LoginRequest, MeResponse, RefreshRequest, TokenResponse
@@ -35,18 +36,25 @@ class ChatResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = load_settings()
-    conn_string = settings.db_path if settings.persist_memory else ":memory:"
 
-    auth_conn = await init_db(settings.auth_db_path)
+    # Auth DB (SQLite ou PostgreSQL)
+    db_mod = get_db_module(settings)
+    auth_conn = await create_auth_db(settings)
 
-    await seed_admin_if_needed(
+    await db_mod.seed_admin_if_needed(
         auth_conn,
         username=settings.admin_username,
         email=settings.admin_email,
         password=settings.admin_password,
     )
 
-    async with AsyncSqliteSaver.from_conn_string(conn_string) as checkpointer:
+    # Redis (opcional)
+    if settings.redis_url:
+        from .cache import get_redis
+        get_redis(settings.redis_url)
+
+    # Checkpointer (SQLite ou PostgreSQL)
+    async with create_checkpointer(settings) as checkpointer:
         graph = build_graph(
             model_name=settings.model_name,
             system_prompt=settings.system_prompt,
@@ -56,10 +64,12 @@ async def lifespan(app: FastAPI):
         app.state.graph = graph
         app.state.settings = settings
         app.state.auth_db = auth_conn
+        app.state.db_module = db_mod
         app.state.checkpointer = checkpointer
-        yield
-
-    await auth_conn.close()
+        try:
+            yield
+        finally:
+            await auth_conn.close()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -67,7 +77,7 @@ app.include_router(admin_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -81,8 +91,9 @@ async def login(request: LoginRequest):
     """Autentica usuario e retorna access + refresh tokens."""
     conn = app.state.auth_db
     settings = app.state.settings
+    db_mod = app.state.db_module
 
-    user = await get_user_by_username(conn, request.username)
+    user = await db_mod.get_user_by_username(conn, request.username)
     if not user or not verify_password(request.password, user["hashed_password"]):
         from fastapi import HTTPException, status
         raise HTTPException(
@@ -116,6 +127,7 @@ async def refresh_token(request: RefreshRequest):
 
     settings = app.state.settings
     conn = app.state.auth_db
+    db_mod = app.state.db_module
 
     try:
         payload = decode_token(request.refresh_token, settings.jwt_secret)
@@ -131,7 +143,7 @@ async def refresh_token(request: RefreshRequest):
             detail="Token invalido (tipo incorreto).",
         )
 
-    user = await get_user_by_id(conn, payload.sub)
+    user = await db_mod.get_user_by_id(conn, payload.sub)
     if not user or not user["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -190,6 +202,7 @@ async def websocket_endpoint(
     """WebSocket com auth via query param ?token=<jwt>."""
     settings = app.state.settings
     conn = app.state.auth_db
+    db_mod = app.state.db_module
 
     # Validar token antes de aceitar conexao
     if not token:
@@ -206,7 +219,7 @@ async def websocket_endpoint(
         await ws.close(code=4001, reason="Token invalido (tipo incorreto).")
         return
 
-    user = await get_user_by_id(conn, payload.sub)
+    user = await db_mod.get_user_by_id(conn, payload.sub)
     if not user or not user["is_active"]:
         await ws.close(code=4001, reason="Usuario invalido.")
         return
@@ -245,4 +258,5 @@ async def websocket_endpoint(
 
 
 def main():
-    uvicorn.run("jarvis.api:app", host="0.0.0.0", port=8000)
+    port = int(os.environ.get("JARVIS_PORT", "8000"))
+    uvicorn.run("jarvis.api:app", host="0.0.0.0", port=port)

@@ -49,15 +49,19 @@ class TestLoadSettings:
         monkeypatch.delenv("JARVIS_SESSION_ID", raising=False)
         monkeypatch.delenv("JARVIS_PERSIST_MEMORY", raising=False)
         monkeypatch.delenv("JARVIS_DB_PATH", raising=False)
+        monkeypatch.delenv("DATABASE_URL", raising=False)
+        monkeypatch.delenv("REDIS_URL", raising=False)
 
         settings = load_settings()
 
         assert settings.model_name == "gpt-4.1-mini"
         assert settings.history_window == 3
-        assert settings.max_tool_steps == 5
+        assert settings.max_tool_steps == 10
         assert settings.db_path == ".jarvis.db"
         assert settings.session_id == "default"
         assert settings.persist_memory is True
+        assert settings.database_url == ""
+        assert settings.redis_url == ""
 
     def test_invalid_int_env(self, monkeypatch):
         monkeypatch.setattr("jarvis.config.load_dotenv", lambda: None)

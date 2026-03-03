@@ -5,8 +5,22 @@ from dotenv import load_dotenv
 
 DEFAULT_SYSTEM_PROMPT = (
     "Voce e um assistente tecnico, direto e didatico. "
-    "Use as ferramentas disponiveis quando a pergunta exigir calculos "
-    "ou data/hora."
+    "Use as ferramentas disponiveis quando a pergunta exigir calculos, "
+    "data/hora ou informacoes do Cartola FC.\n\n"
+    "## Cartola FC\n"
+    "Quando o usuario perguntar sobre Cartola FC, SEMPRE use as ferramentas cartola_* "
+    "para buscar dados reais antes de responder. Nunca invente dados.\n"
+    "- cartola_market_status: status do mercado (rodada, fechamento)\n"
+    "- cartola_players: busca jogadores com filtros (position, club, max_price, min_average, status, order_by, limit)\n"
+    "- cartola_round_scores: pontuadores de uma rodada\n"
+    "- cartola_matches: partidas de uma rodada\n"
+    "- cartola_expert_tips: dicas de especialistas\n\n"
+    "Para montar escalacoes:\n"
+    "1. Use cartola_market_status para saber a rodada atual\n"
+    "2. Use cartola_players com filtros por posicao (GOL, LAT, ZAG, MEI, ATA) para buscar opcoes\n"
+    "3. Considere o orcamento do usuario, medias e precos\n"
+    "4. Monte a escalacao final em formato de tabela com posicao, jogador, clube, media e preco\n"
+    "5. Garanta que o total nao ultrapasse o orcamento informado"
 )
 
 
@@ -19,6 +33,9 @@ class Settings:
     db_path: str
     session_id: str
     persist_memory: bool
+    # Infra (PostgreSQL / Redis)
+    database_url: str = ""
+    redis_url: str = ""
     # Auth / JWT
     jwt_secret: str = "change-me-in-production"
     jwt_access_expiry_minutes: int = 30
@@ -64,10 +81,12 @@ def load_settings() -> Settings:
         )
 
     return Settings(
+        database_url=os.getenv("DATABASE_URL", ""),
+        redis_url=os.getenv("REDIS_URL", ""),
         system_prompt=os.getenv("JARVIS_SYSTEM_PROMPT", DEFAULT_SYSTEM_PROMPT),
         model_name=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
         history_window=_read_non_negative_int("JARVIS_HISTORY_WINDOW", "3"),
-        max_tool_steps=_read_non_negative_int("JARVIS_MAX_TOOL_STEPS", "5"),
+        max_tool_steps=_read_non_negative_int("JARVIS_MAX_TOOL_STEPS", "10"),
         db_path=os.getenv("JARVIS_DB_PATH", ".jarvis.db"),
         session_id=os.getenv("JARVIS_SESSION_ID", "default"),
         persist_memory=_read_bool("JARVIS_PERSIST_MEMORY", True),

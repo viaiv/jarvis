@@ -2,18 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from .db import (
-    create_user,
-    delete_user,
-    get_global_config,
-    get_user_by_id,
-    get_user_config,
-    list_users,
-    set_global_config,
-    set_user_config,
-    update_user,
-    update_user_password,
-)
+from .db_factory import get_integrity_error
 from .deps import get_admin_user
 from .logs import get_thread_messages, list_threads
 from .schemas import (
@@ -34,8 +23,14 @@ def _conn(request: Request):
     return request.app.state.auth_db
 
 
-def _db_path(request: Request) -> str:
-    return request.app.state.settings.db_path
+def _db(request: Request):
+    """Retorna modulo de DB ativo (db ou db_postgres)."""
+    return request.app.state.db_module
+
+
+def _checkpointer(request: Request):
+    """Retorna checkpointer ativo."""
+    return request.app.state.checkpointer
 
 
 # --- Users CRUD ---
@@ -44,24 +39,26 @@ def _db_path(request: Request) -> str:
 @router.get("/users", response_model=list[UserResponse])
 async def admin_list_users(request: Request):
     """Lista todos os usuarios."""
-    users = await list_users(_conn(request))
+    db = _db(request)
+    users = await db.list_users(_conn(request))
     return [UserResponse(**u) for u in users]
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def admin_create_user(body: UserCreate, request: Request):
     """Cria novo usuario."""
-    from aiosqlite import IntegrityError
+    db = _db(request)
+    integrity_error = get_integrity_error(request.app.state.settings)
 
     try:
-        user = await create_user(
+        user = await db.create_user(
             _conn(request),
             username=body.username,
             email=body.email,
             plain_password=body.password,
             role=body.role,
         )
-    except IntegrityError:
+    except integrity_error:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username ou email ja existe.",
@@ -73,7 +70,8 @@ async def admin_create_user(body: UserCreate, request: Request):
 @router.get("/users/{user_id}", response_model=UserResponse)
 async def admin_get_user(user_id: int, request: Request):
     """Retorna dados de um usuario."""
-    user = await get_user_by_id(_conn(request), user_id)
+    db = _db(request)
+    user = await db.get_user_by_id(_conn(request), user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -85,7 +83,8 @@ async def admin_get_user(user_id: int, request: Request):
 @router.put("/users/{user_id}", response_model=UserResponse)
 async def admin_update_user(user_id: int, body: UserUpdate, request: Request):
     """Atualiza dados de um usuario."""
-    user = await update_user(
+    db = _db(request)
+    user = await db.update_user(
         _conn(request),
         user_id,
         email=body.email,
@@ -103,7 +102,8 @@ async def admin_update_user(user_id: int, body: UserUpdate, request: Request):
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_delete_user(user_id: int, request: Request):
     """Remove um usuario."""
-    deleted = await delete_user(_conn(request), user_id)
+    db = _db(request)
+    deleted = await db.delete_user(_conn(request), user_id)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -114,7 +114,8 @@ async def admin_delete_user(user_id: int, request: Request):
 @router.put("/users/{user_id}/password", status_code=status.HTTP_204_NO_CONTENT)
 async def admin_update_password(user_id: int, body: PasswordUpdate, request: Request):
     """Atualiza senha de um usuario."""
-    updated = await update_user_password(_conn(request), user_id, body.password)
+    db = _db(request)
+    updated = await db.update_user_password(_conn(request), user_id, body.password)
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -128,37 +129,41 @@ async def admin_update_password(user_id: int, body: PasswordUpdate, request: Req
 @router.get("/config", response_model=ConfigResponse)
 async def admin_get_global_config(request: Request):
     """Retorna config global."""
-    config = await get_global_config(_conn(request))
+    db = _db(request)
+    config = await db.get_global_config(_conn(request))
     return ConfigResponse(**config)
 
 
 @router.put("/config", response_model=ConfigResponse)
 async def admin_set_global_config(body: ConfigUpdate, request: Request):
     """Atualiza config global (merge com existente)."""
+    db = _db(request)
     updates = body.model_dump(exclude_none=True)
     if updates:
-        await set_global_config(_conn(request), updates)
-    config = await get_global_config(_conn(request))
+        await db.set_global_config(_conn(request), updates)
+    config = await db.get_global_config(_conn(request))
     return ConfigResponse(**config)
 
 
 @router.get("/users/{user_id}/config", response_model=ConfigResponse)
 async def admin_get_user_config(user_id: int, request: Request):
     """Retorna config de um usuario."""
-    user = await get_user_by_id(_conn(request), user_id)
+    db = _db(request)
+    user = await db.get_user_by_id(_conn(request), user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Usuario nao encontrado.",
         )
-    config = await get_user_config(_conn(request), user_id)
+    config = await db.get_user_config(_conn(request), user_id)
     return ConfigResponse(**config)
 
 
 @router.put("/users/{user_id}/config", response_model=ConfigResponse)
 async def admin_set_user_config(user_id: int, body: ConfigUpdate, request: Request):
     """Atualiza config de um usuario (merge com existente)."""
-    user = await get_user_by_id(_conn(request), user_id)
+    db = _db(request)
+    user = await db.get_user_by_id(_conn(request), user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -166,8 +171,8 @@ async def admin_set_user_config(user_id: int, body: ConfigUpdate, request: Reque
         )
     updates = body.model_dump(exclude_none=True)
     if updates:
-        await set_user_config(_conn(request), user_id, updates)
-    config = await get_user_config(_conn(request), user_id)
+        await db.set_user_config(_conn(request), user_id, updates)
+    config = await db.get_user_config(_conn(request), user_id)
     return ConfigResponse(**config)
 
 
@@ -182,16 +187,19 @@ async def admin_list_threads(
     offset: int = 0,
 ):
     """Lista threads de conversa."""
-    db_path = _db_path(request)
-    threads, total = await list_threads(db_path, user_id=user_id, limit=limit, offset=offset)
+    settings = request.app.state.settings
+    threads, total = await list_threads(
+        settings, user_id=user_id, limit=limit, offset=offset,
+    )
 
     # Buscar usernames para os threads
+    db = _db(request)
     conn = _conn(request)
     summaries = []
     for t in threads:
         username = None
         if t["user_id"] is not None:
-            user = await get_user_by_id(conn, t["user_id"])
+            user = await db.get_user_by_id(conn, t["user_id"])
             username = user["username"] if user else None
 
         summaries.append(ThreadSummary(
@@ -206,6 +214,6 @@ async def admin_list_threads(
 @router.get("/logs/{thread_id:path}")
 async def admin_get_thread_messages(thread_id: str, request: Request):
     """Retorna mensagens de um thread."""
-    db_path = _db_path(request)
-    messages = await get_thread_messages(db_path, thread_id)
+    checkpointer = _checkpointer(request)
+    messages = await get_thread_messages(checkpointer, thread_id)
     return {"thread_id": thread_id, "messages": messages}

@@ -1,0 +1,14 @@
+.venv/
+node_modules/
+__pycache__/
+*.pyc
+.env
+.git/
+*.db
+*.db-shm
+*.db-wal
+dist/
+.pytest_cache/
+.mypy_cache/
+.claude/
+backend/src/jarvis.egg-info/
