@@ -5,6 +5,11 @@ server {
     root /usr/share/nginx/html;
     index index.html;
 
+    # Buffers para headers/cookies grandes (EasyPanel/Traefik injeta headers extras)
+    large_client_header_buffers 4 32k;
+    proxy_buffer_size 16k;
+    proxy_buffers 4 16k;
+
     # Gzip
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml text/javascript image/svg+xml;
