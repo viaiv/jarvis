@@ -1,6 +1,6 @@
 # Jarvis
 
-Projeto de estudo para aprender `LangChain` e `LangGraph` por etapas.
+Assistente pessoal conversacional construido com `LangChain` e `LangGraph`.
 
 ## Estrutura
 

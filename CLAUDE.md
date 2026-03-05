@@ -1,7 +1,6 @@
 # Jarvis
 
-Assistente conversacional de estudo construído com LangChain + LangGraph.
-Projeto educacional para aprender tool calling, grafos de agentes e memória persistente.
+Assistente pessoal conversacional construido com LangChain + LangGraph.
 
 ## Stack e Arquitetura
 

@@ -91,7 +91,7 @@ function App() {
               </h2>
               <div className="w-24 h-px bg-gradient-to-r from-transparent via-accent/30 to-transparent mb-5" />
               <p className="text-[13px] text-text-muted tracking-wide">
-                Assistente de estudo
+                Assistente pessoal
               </p>
             </div>
           ) : (
