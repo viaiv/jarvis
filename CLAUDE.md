@@ -21,6 +21,8 @@ Mapa de diretórios:
 - `backend/src/jarvis/` — Código principal do assistente (Python/FastAPI)
 - `backend/src/jarvis/tools/` — Pacote de ferramentas (base, GitHub, Cartola FC)
 - `backend/src/jarvis/cartola/` — Ferramentas do Cartola FC (client HTTP, tools, scraper)
+- `backend/src/jarvis/nodes/` — Nos do grafo GitHub Agent (classificador de issues)
+- `backend/src/jarvis/prompts/` — System prompts especializados (GitHub Agent)
 - `backend/tests/` — Testes unitários
 - `frontend/` — Interface web (React + Vite + TypeScript)
 - `trilha/` — Documentação incremental da trilha de aprendizado (etapas 00–06)
@@ -79,6 +81,7 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - `GitHubGraphState` extende o state com campos de issue: `issue_title`, `issue_body`, `issue_number`, `repo`, `issue_category`
 - `build_github_graph()` constroi o grafo completo com classificador como entry point
 - Classificador em `nodes/classifier.py`: prompt estruturado, fallback para QUESTION se resposta invalida
+- System prompt dedicado em `prompts/github_agent.py` (`GITHUB_AGENT_PROMPT`): instrucoes por categoria (labels, branches, PRs, comentarios)
 
 ### Webhook GitHub
 
@@ -87,6 +90,15 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - Filtra apenas eventos `issues` com acoes `opened` e `edited`
 - Processa em background via FastAPI `BackgroundTasks` — responde 200 imediatamente
 - Evento `ping` retorna `{"status": "pong"}` (usado pelo GitHub ao configurar webhook)
+
+### GitHub Actions
+
+- Workflow `.github/workflows/jarvis-agent.yml` — alternativa ao webhook para processar issues
+- Trigger: `issues: [opened, edited]`
+- Permissions: `contents: write`, `issues: write`, `pull-requests: write`
+- Executa inline Python que le `GITHUB_EVENT_PATH`, constroi o grafo GitHub e invoca com dados da issue
+- Usa `GITHUB_AGENT_PROMPT` como system prompt (mesmo prompt do webhook)
+- Secrets necessarios: `OPENAI_API_KEY`, `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`
 
 ## Streaming e Protocolo WebSocket
 

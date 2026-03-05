@@ -14,6 +14,7 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request, status
 
 from .config import Settings
 from .graph import build_github_graph
+from .prompts import GITHUB_AGENT_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ async def _handle_issue_event(
     try:
         graph = build_github_graph(
             model_name=settings.model_name,
-            system_prompt=settings.system_prompt,
+            system_prompt=GITHUB_AGENT_PROMPT,
             max_tool_steps=15,
         )
 

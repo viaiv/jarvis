@@ -16,6 +16,7 @@ Arquitetura atual do backend (`backend/src/jarvis/`):
 - `cartola/`: subpacote com ferramentas do Cartola FC (client HTTP, tools, scraper).
 - `graph.py`: definicao e compilacao do fluxo no LangGraph (`build_graph` para chat, `build_github_graph` para agente GitHub com classificador) + sanitizacao de historico.
 - `nodes/`: nos do grafo GitHub Agent (classificador de issues via LLM).
+- `prompts/`: system prompts especializados (GitHub Agent com instrucoes por categoria).
 - `graph_cache.py`: LRU cache de grafos compilados por config.
 - `chat.py`: streaming de eventos tipados (token, tool_start, tool_end) e invocacao do grafo.
 - `webhook.py`: webhook GitHub (`POST /webhook/github`) com validacao HMAC-SHA256 e processamento em background.

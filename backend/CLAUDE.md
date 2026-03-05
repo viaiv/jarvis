@@ -21,6 +21,9 @@ Pacote Python instalável com o assistente conversacional.
 - `nodes/` — Nos do grafo GitHub Agent:
   - `classifier.py` — Classificador de issues via LLM (BUG, FEATURE, DOCS, QUESTION, SECURITY), prompt estruturado, fallback para QUESTION
   - `__init__.py` — Exporta `classify_issue`, `ISSUE_CATEGORIES`
+- `prompts/` — System prompts especializados:
+  - `github_agent.py` — `GITHUB_AGENT_PROMPT`: instrucoes por categoria (BUG→fix/, FEATURE→feat/, DOCS→docs/, QUESTION→resposta, SECURITY→security/), regras gerais (draft PRs, codigo limpo, sem .env)
+  - `__init__.py` — Exporta `GITHUB_AGENT_PROMPT`
 - `webhook.py` — Webhook GitHub (`POST /webhook/github`): validacao HMAC-SHA256, filtra issues opened/edited, dispara agente em background via BackgroundTasks
 - `api.py` — Entry point da API REST (`jarvis-api`), endpoints HTTP + WS + auth, porta via `JARVIS_PORT` env var (default 8000)
 - `auth.py` — Hash bcrypt, JWT encode/decode, `TokenPayload` dataclass
