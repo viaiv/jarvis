@@ -1,6 +1,8 @@
 import { authFetch } from '../auth/authFetch'
 import type {
   AdminUser,
+  AgentRun,
+  AgentRunListResponse,
   ConfigData,
   ThreadListResponse,
   ThreadMessage,
@@ -116,4 +118,23 @@ export async function getThreadMessages(threadId: string): Promise<ThreadMessage
   const resp = await authFetch(`${BASE}/logs/${encodeURIComponent(threadId)}`)
   const data = await json<{ thread_id: string; messages: ThreadMessage[] }>(resp)
   return data.messages
+}
+
+// --- Agent Runs ---
+
+export async function listAgentRuns(
+  params?: { status?: string; limit?: number; offset?: number },
+): Promise<AgentRunListResponse> {
+  const qs = new URLSearchParams()
+  if (params?.status) qs.set('status', params.status)
+  if (params?.limit != null) qs.set('limit', String(params.limit))
+  if (params?.offset != null) qs.set('offset', String(params.offset))
+  const query = qs.toString()
+  const resp = await authFetch(`${BASE}/agent-runs${query ? `?${query}` : ''}`)
+  return json<AgentRunListResponse>(resp)
+}
+
+export async function getAgentRun(id: number): Promise<AgentRun> {
+  const resp = await authFetch(`${BASE}/agent-runs/${id}`)
+  return json<AgentRun>(resp)
 }

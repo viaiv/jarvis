@@ -12,11 +12,14 @@ Arquitetura atual do backend (`backend/src/jarvis/`):
 
 - `cli.py`: interface de linha de comando e loop interativo.
 - `config.py`: leitura e validacao de configuracoes do `.env`, campos auth/JWT/infra, system prompt com instrucoes Cartola FC.
-- `tools.py`: ferramentas disponiveis para o agente (calculator, current_time + Cartola FC).
+- `tools/`: pacote de ferramentas (calculator, current_time, Cartola FC, GitHub).
 - `cartola/`: subpacote com ferramentas do Cartola FC (client HTTP, tools, scraper).
-- `graph.py`: definicao e compilacao do fluxo no LangGraph + sanitizacao de historico.
+- `graph.py`: definicao e compilacao do fluxo no LangGraph (`build_graph` para chat, `build_github_graph` para agente GitHub com classificador) + sanitizacao de historico.
+- `nodes/`: nos do grafo GitHub Agent (classificador de issues via LLM).
+- `prompts/`: system prompts especializados (GitHub Agent com instrucoes por categoria).
 - `graph_cache.py`: LRU cache de grafos compilados por config.
 - `chat.py`: streaming de eventos tipados (token, tool_start, tool_end) e invocacao do grafo.
+- `webhook.py`: webhook GitHub (`POST /webhook/github`) com validacao HMAC-SHA256 e processamento em background.
 - `api.py`: API REST (HTTP + WebSocket) com FastAPI, auth JWT.
 - `auth.py`: hash bcrypt, JWT encode/decode.
 - `db.py`: banco auth SQLite (aiosqlite) com CRUD users e config.
@@ -79,6 +82,21 @@ REDIS_URL=redis://localhost:6379
 
 Sem essas variaveis, tudo continua funcionando com SQLite e sem cache (backward compatible).
 
+### GitHub Agent (opcional)
+
+Para usar as ferramentas de automacao GitHub (ler issues, criar PRs, etc):
+
+```bash
+pip install -e "./backend[github]"
+```
+
+Configure no `.env`:
+
+```env
+GITHUB_TOKEN=ghp_...
+GITHUB_WEBHOOK_SECRET=seu-webhook-secret
+```
+
 ## Desenvolvimento
 
 Para subir backend + frontend juntos:
@@ -131,6 +149,7 @@ Acessivel em `/admin` para usuarios com role `admin`.
 
 - **Usuarios**: CRUD completo (criar, editar, desativar, resetar senha).
 - **Logs**: visualizar conversas de qualquer usuario com filtro e paginacao.
+- **Agent Runs**: monitoramento de execucoes do agente GitHub (status, categoria, tool steps, erros).
 - **Config**: editar configuracao global e por usuario (model, system prompt, history window, max tool steps).
 
 Endpoints do backend em `/admin/*`, protegidos por `get_admin_user` dependency.
@@ -212,6 +231,33 @@ jarvis-chat "Quem mais pontuou na ultima rodada?"
 jarvis-chat "Quais os jogos da proxima rodada?"
 ```
 
+#### GitHub
+
+8 ferramentas para interagir com repositorios GitHub via PyGithub (requer `GITHUB_TOKEN`):
+
+- `github_read_issue`: le titulo, corpo e labels de uma issue.
+- `github_read_file`: le conteudo de um arquivo do repositorio.
+- `github_list_files`: lista arquivos e diretorios.
+- `github_comment_issue`: comenta em uma issue.
+- `github_create_branch`: cria branch a partir de outra.
+- `github_create_or_update_file`: cria ou atualiza arquivo com commit.
+- `github_create_pr`: abre PR como draft.
+- `github_add_label`: adiciona label a uma issue/PR.
+
+Instale a dependencia opcional:
+
+```bash
+pip install -e "./backend[github]"
+```
+
+Exemplos:
+
+```bash
+jarvis-chat "Leia a issue #1 do repo viaiv/jarvis"
+jarvis-chat "Liste os arquivos na raiz do repo viaiv/jarvis"
+jarvis-chat "Crie uma branch fix/42 no repo viaiv/jarvis"
+```
+
 ### Memoria persistente
 
 - A conversa e salva por sessao via checkpointer do LangGraph (SQLite ou PostgreSQL via `checkpoint.py`).
@@ -266,6 +312,7 @@ O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
 - `src/layouts/AdminLayout.tsx`: layout com sidebar para area admin.
 - `src/pages/admin/UsersPage.tsx`: CRUD de usuarios.
 - `src/pages/admin/LogsPage.tsx`: viewer de conversas.
+- `src/pages/admin/AgentRunsPage.tsx`: monitoramento de execucoes do agente GitHub.
 - `src/pages/admin/ConfigPage.tsx`: editor de config global e por usuario.
 - `src/api/adminApi.ts`: client tipado para endpoints admin.
 

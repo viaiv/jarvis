@@ -44,6 +44,9 @@ class Settings:
     admin_username: str = "admin"
     admin_email: str = "admin@jarvis.local"
     admin_password: str = "admin"
+    # GitHub Agent
+    github_token: str = ""
+    github_webhook_secret: str = ""
 
 
 def _read_non_negative_int(key: str, default: str) -> int:
@@ -101,6 +104,8 @@ def load_settings() -> Settings:
         admin_username=os.getenv("JARVIS_ADMIN_USERNAME", "admin"),
         admin_email=os.getenv("JARVIS_ADMIN_EMAIL", "admin@jarvis.local"),
         admin_password=os.getenv("JARVIS_ADMIN_PASSWORD", "admin"),
+        github_token=os.getenv("GITHUB_TOKEN", ""),
+        github_webhook_secret=os.getenv("GITHUB_WEBHOOK_SECRET", ""),
     )
 
 

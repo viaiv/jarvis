@@ -1,4 +1,4 @@
-from typing import Annotated, List, TypedDict
+from typing import Annotated, List, Optional, TypedDict
 
 from langchain_core.messages import (
     AIMessage,
@@ -12,7 +12,9 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from .nodes.classifier import IssueCategory, classify_issue
 from .tools import ALL_TOOLS
+from .tools.github import GITHUB_TOOLS
 
 
 class GraphState(TypedDict):
@@ -146,6 +148,98 @@ def build_graph(
     graph_builder.add_node("assistant", assistant_node)
     graph_builder.add_node("tools", tools_node)
     graph_builder.add_edge(START, "assistant")
+    graph_builder.add_conditional_edges("assistant", route_after_assistant)
+    graph_builder.add_edge("tools", "assistant")
+    return graph_builder.compile(checkpointer=checkpointer)
+
+
+# ---------------------------------------------------------------------------
+# GitHub Agent Graph
+# ---------------------------------------------------------------------------
+
+class GitHubGraphState(TypedDict):
+    messages: Annotated[List[BaseMessage], add_messages]
+    tool_steps: int
+    max_tool_steps: int
+    issue_title: str
+    issue_body: str
+    issue_number: int
+    repo: str
+    issue_category: Optional[IssueCategory]
+
+
+def build_github_graph(
+    model_name: str,
+    system_prompt: str,
+    max_tool_steps: int = 15,
+    checkpointer=None,
+):
+    """Constroi grafo do agente GitHub com classificador como entry point.
+
+    Fluxo: START -> classifier -> assistant -> [tools -> assistant]* -> END
+    """
+    model = ChatOpenAI(
+        model=model_name, temperature=0, streaming=True,
+    ).bind_tools(GITHUB_TOOLS)
+    tool_node = ToolNode(GITHUB_TOOLS)
+
+    async def classifier_node(state: GitHubGraphState) -> dict:
+        """Classifica a issue e injeta contexto no historico."""
+        category = await classify_issue(
+            title=state["issue_title"],
+            body=state.get("issue_body", ""),
+            model_name=model_name,
+        )
+
+        # Montar mensagem inicial para o agente com contexto da issue
+        issue_context = (
+            f"Issue #{state['issue_number']} no repositorio {state['repo']}\n"
+            f"Categoria: {category}\n"
+            f"Titulo: {state['issue_title']}\n\n"
+            f"Corpo:\n{state.get('issue_body') or '(sem descricao)'}"
+        )
+
+        return {
+            "issue_category": category,
+            "messages": [HumanMessage(content=issue_context)],
+        }
+
+    async def assistant_node(state: GitHubGraphState) -> dict:
+        trimmed = [SystemMessage(content=system_prompt)] + [
+            m for m in state["messages"] if not isinstance(m, SystemMessage)
+        ]
+        trimmed = _sanitize_tool_sequences(trimmed)
+        response = await model.ainvoke(trimmed)
+        return {"messages": [response]}
+
+    async def tools_node(state: GitHubGraphState) -> dict:
+        result = await tool_node.ainvoke({"messages": state["messages"]})
+        return {
+            "messages": result["messages"],
+            "tool_steps": state.get("tool_steps", 0) + 1,
+        }
+
+    def route_after_assistant(state: GitHubGraphState) -> str:
+        messages = state.get("messages", [])
+        if not messages:
+            return END
+
+        last_message = messages[-1]
+        if (
+            isinstance(last_message, AIMessage)
+            and last_message.tool_calls
+            and state.get("tool_steps", 0) < state.get("max_tool_steps", max_tool_steps)
+        ):
+            return "tools"
+
+        return END
+
+    graph_builder = StateGraph(GitHubGraphState)
+    graph_builder.add_node("classifier", classifier_node)
+    graph_builder.add_node("assistant", assistant_node)
+    graph_builder.add_node("tools", tools_node)
+    graph_builder.add_edge(START, "classifier")
+    graph_builder.add_edge("classifier", "assistant")
     graph_builder.add_conditional_edges("assistant", route_after_assistant)
     graph_builder.add_edge("tools", "assistant")
     return graph_builder.compile(checkpointer=checkpointer)

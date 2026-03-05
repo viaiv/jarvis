@@ -4,6 +4,7 @@ import { useAuth } from '../auth/AuthContext'
 const navItems = [
   { to: '/admin/users', label: 'Usuarios' },
   { to: '/admin/logs', label: 'Logs' },
+  { to: '/admin/agent-runs', label: 'Agent' },
   { to: '/admin/config', label: 'Config' },
 ]
 

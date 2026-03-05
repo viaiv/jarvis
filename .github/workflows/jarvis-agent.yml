@@ -1,0 +1,90 @@
+name: Jarvis Agent
+
+on:
+  issues:
+    types: [opened, edited, labeled]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  process-issue:
+    runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'jarvis-agent')
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend
+        run: pip install -e ./backend
+
+      - name: Dispatch to webhook
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_WEBHOOK_SECRET: ${{ secrets.GITHUB_WEBHOOK_SECRET }}
+          JARVIS_PORT: "8000"
+        run: |
+          python -c "
+          import asyncio
+          import json
+          import os
+
+          from jarvis.config import load_settings
+          from jarvis.graph import build_github_graph
+          from jarvis.prompts import GITHUB_AGENT_PROMPT
+
+          async def main():
+              event_path = os.environ.get('GITHUB_EVENT_PATH', '')
+              if not event_path:
+                  print('GITHUB_EVENT_PATH nao definido')
+                  return
+
+              with open(event_path) as f:
+                  payload = json.load(f)
+
+              issue = payload.get('issue', {})
+              repo = payload.get('repository', {})
+
+              issue_number = issue.get('number', 0)
+              title = issue.get('title', '')
+              body = issue.get('body') or ''
+              repo_full_name = repo.get('full_name', '')
+              action = payload.get('action', '')
+
+              print(f'Processando issue #{issue_number} ({title}) em {repo_full_name} — acao: {action}')
+
+              settings = load_settings()
+
+              graph = build_github_graph(
+                  model_name=settings.model_name,
+                  system_prompt=GITHUB_AGENT_PROMPT,
+                  max_tool_steps=15,
+              )
+
+              result = await graph.ainvoke({
+                  'messages': [],
+                  'tool_steps': 0,
+                  'max_tool_steps': 15,
+                  'issue_title': title,
+                  'issue_body': body,
+                  'issue_number': issue_number,
+                  'repo': repo_full_name,
+                  'issue_category': None,
+              })
+
+              category = result.get('issue_category', 'QUESTION')
+              steps = result.get('tool_steps', 0)
+              print(f'Issue #{issue_number} classificada como {category} — {steps} tool steps')
+
+          asyncio.run(main())
+          "

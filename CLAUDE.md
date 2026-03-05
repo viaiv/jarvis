@@ -19,7 +19,10 @@ Projeto educacional para aprender tool calling, grafos de agentes e memória per
 
 Mapa de diretórios:
 - `backend/src/jarvis/` — Código principal do assistente (Python/FastAPI)
+- `backend/src/jarvis/tools/` — Pacote de ferramentas (base, GitHub, Cartola FC)
 - `backend/src/jarvis/cartola/` — Ferramentas do Cartola FC (client HTTP, tools, scraper)
+- `backend/src/jarvis/nodes/` — Nos do grafo GitHub Agent (classificador de issues)
+- `backend/src/jarvis/prompts/` — System prompts especializados (GitHub Agent)
 - `backend/tests/` — Testes unitários
 - `frontend/` — Interface web (React + Vite + TypeScript)
 - `trilha/` — Documentação incremental da trilha de aprendizado (etapas 00–06)
@@ -60,6 +63,8 @@ cp backend/.env.example .env       # configurar OPENAI_API_KEY
 
 ## Arquitetura do Grafo (LangGraph)
 
+### Grafo Conversacional (Chat)
+
 Fluxo: `START → assistant → [tools → assistant]* → END`
 - O nó `assistant` chama o LLM com system prompt + histórico trimado
 - Se há `tool_calls` na resposta e não atingiu `max_tool_steps`, vai para `tools`
@@ -67,6 +72,36 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - Sem `tool_calls` → encerra
 - `_sanitize_tool_sequences` valida consistência de tool calls no histórico antes de enviar ao modelo
 - `_trim_and_prepend_system` conta turnos humanos (HumanMessage) para trimming — preserva blocos completos de tool calls dentro de cada turno
+
+### Grafo GitHub Agent
+
+Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
+- O nó `classifier` classifica a issue (BUG, FEATURE, DOCS, QUESTION, SECURITY) via LLM e injeta contexto no historico
+- O nó `assistant` usa apenas `GITHUB_TOOLS` (8 tools via PyGithub)
+- `GitHubGraphState` extende o state com campos de issue: `issue_title`, `issue_body`, `issue_number`, `repo`, `issue_category`
+- `build_github_graph()` constroi o grafo completo com classificador como entry point
+- Classificador em `nodes/classifier.py`: prompt estruturado, fallback para QUESTION se resposta invalida
+- System prompt dedicado em `prompts/github_agent.py` (`GITHUB_AGENT_PROMPT`): instrucoes por categoria (labels, branches, PRs, comentarios)
+
+### Webhook GitHub
+
+- `POST /webhook/github` — Recebe webhooks do GitHub (eventos de issues)
+- Validacao HMAC-SHA256 via `GITHUB_WEBHOOK_SECRET` (opcional, se nao configurado aceita tudo)
+- Filtra apenas eventos `issues` com acoes `opened`, `edited` e `labeled`
+- So processa issues com label `jarvis-agent` (ignora as demais)
+- Processa em background via FastAPI `BackgroundTasks` — responde 200 imediatamente
+- Registra cada execucao na tabela `agent_runs` (status: processing → completed/failed, categoria, tool_steps, error_message)
+- Evento `ping` retorna `{"status": "pong"}` (usado pelo GitHub ao configurar webhook)
+
+### GitHub Actions
+
+- Workflow `.github/workflows/jarvis-agent.yml` — alternativa ao webhook para processar issues
+- Trigger: `issues: [opened, edited, labeled]`
+- Condicao: `if: contains(github.event.issue.labels.*.name, 'jarvis-agent')` — so executa com label
+- Permissions: `contents: write`, `issues: write`, `pull-requests: write`
+- Executa inline Python que le `GITHUB_EVENT_PATH`, constroi o grafo GitHub e invoca com dados da issue
+- Usa `GITHUB_AGENT_PROMPT` como system prompt (mesmo prompt do webhook)
+- Secrets necessarios: `OPENAI_API_KEY`, `GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`
 
 ## Streaming e Protocolo WebSocket
 
@@ -87,7 +122,7 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 ## Autenticacao e Multi-usuario
 
 - JWT stateless com access token (30min) e refresh token (7 dias)
-- Banco auth: SQLite (`.jarvis-auth.db`) ou PostgreSQL (via `DATABASE_URL`) — tabelas: `users`, `global_config`, `user_config`
+- Banco auth: SQLite (`.jarvis-auth.db`) ou PostgreSQL (via `DATABASE_URL`) — tabelas: `users`, `global_config`, `user_config`, `agent_runs`
 - `db_factory.py` seleciona backend automaticamente: `create_auth_db()`, `get_db_module()`, `get_integrity_error()`
 - Senhas com bcrypt (hash direto, sem passlib)
 - PyJWT: `sub` claim e string (`str(user_id)` / `int(data["sub"])`)
@@ -104,13 +139,14 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - Users CRUD: `GET/POST /admin/users`, `GET/PUT/DELETE /admin/users/{id}`, `PUT /admin/users/{id}/password`
 - Config: `GET/PUT /admin/config` (global), `GET/PUT /admin/users/{id}/config` (por usuario)
 - Logs: `GET /admin/logs` (lista threads paginada), `GET /admin/logs/{thread_id}` (mensagens)
+- Agent Runs: `GET /admin/agent-runs` (lista paginada com filtro por status), `GET /admin/agent-runs/{id}` (detalhes)
 - `graph_cache.py`: LRU cache de grafos compilados por (model_name, system_prompt, history_window)
 
 ### Frontend (`/admin/*`)
 - Rota protegida por `AdminRoute` (role=admin)
-- Layout com sidebar (Usuarios, Logs, Config) + link para voltar ao chat
+- Layout com sidebar (Usuarios, Logs, Agent, Config) + link para voltar ao chat
 - `adminApi.ts`: client tipado para todos os endpoints admin
-- Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `ConfigPage` (editor global/por usuario)
+- Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `AgentRunsPage` (monitoramento de execucoes do agente GitHub), `ConfigPage` (editor global/por usuario)
 
 ## Cartola FC Tools
 
@@ -124,13 +160,35 @@ Subpacote `backend/src/jarvis/cartola/` com 5 ferramentas para o Cartola FC:
 
 Arquitetura:
 - `client.py`: HTTP client usando `urllib.request` (sem dependencia extra), constantes de mapeamento, cache Redis opcional via `cached_get()`
-- `tools.py`: 5 `@tool` functions registradas em `CARTOLA_TOOLS`, importadas por `tools.py` → `ALL_TOOLS`
+- `tools.py`: 5 `@tool` functions registradas em `CARTOLA_TOOLS`, importadas por `tools/__init__.py` → `ALL_TOOLS`
 - `scraper.py`: Import lazy de `firecrawl-py`, `FIRECRAWL_API_KEY` via `os.getenv`
 - `cache.py`: Wrapper Redis com `get_redis()` e `cached_get(key, ttl, fetch_fn)` — fallback sem Redis
 - API publica: `api.cartola.globo.com` (sem autenticacao)
 - Cache Redis: market_status=5min, players=10min, scored=5min, matches=30min
 - Zero mudanca no grafo/chat/api — integracao via `ALL_TOOLS`
 - System prompt (`DEFAULT_SYSTEM_PROMPT`) instrui o LLM a usar ferramentas cartola_* proativamente e guia montagem de escalacoes passo a passo
+
+## GitHub Tools
+
+Modulo `backend/src/jarvis/tools/github.py` com 8 ferramentas para interagir com repositorios GitHub via PyGithub:
+
+- `github_read_issue` — Le titulo, corpo e labels de uma issue
+- `github_read_file` — Le conteudo de um arquivo do repositorio (trunca em 15k chars)
+- `github_list_files` — Lista arquivos e diretorios de um caminho
+- `github_comment_issue` — Comenta em uma issue
+- `github_create_branch` — Cria branch a partir de outra
+- `github_create_or_update_file` — Cria ou atualiza arquivo com commit
+- `github_create_pr` — Abre PR como draft
+- `github_add_label` — Adiciona label a uma issue/PR
+
+Arquitetura:
+- `tools/github.py`: 8 `@tool` functions, cliente PyGithub via `_get_client()` com lazy init
+- `tools/base.py`: tools basicas (calculator, current_time) extraidas do antigo `tools.py`
+- `tools/__init__.py`: agrega `BASE_TOOLS` + `CARTOLA_TOOLS` + `GITHUB_TOOLS` em `ALL_TOOLS`
+- Dependencia opcional: `pip install -e './backend[github]'` (PyGithub)
+- Env var: `GITHUB_TOKEN` (Personal Access Token com permissoes de repo)
+- Validacao de inputs dentro das tools, retorna mensagem de erro amigavel
+- Zero mudanca no grafo/chat/api — integracao via `ALL_TOOLS`
 
 ## Startup (run.py)
 
@@ -154,6 +212,7 @@ Funcoes utilitarias exportadas: `check_python_version()`, `check_env_file()`, `p
 - Migrations manuais com SQL raw em `backend/alembic/versions/`
 - `env.py` resolve URL dinamicamente: `DATABASE_URL` → `postgresql+psycopg://`, senao `sqlite:///`
 - Migration `001_initial_auth_schema.py`: cria tabelas `users`, `user_config`, `global_config` (detecta dialect para DDL correto)
+- Migration `002_agent_runs.py`: cria tabela `agent_runs` para monitoramento de execucoes do agente GitHub
 - Bancos pre-existentes (criados pelo `CREATE IF NOT EXISTS`): `run.py` detecta e faz `alembic stamp head`
 - SQLite: tabelas continuam sendo criadas em runtime via `db.py` (Alembic e skip)
 - Novas migrations: `cd backend && alembic revision -m "descricao"` e editar manualmente
@@ -166,7 +225,7 @@ Arquivos:
 - `backend/Dockerfile` — Multi-stage build (python:3.12-slim): builder instala pacote, runtime copia site-packages + Alembic config
 - `backend/entrypoint.sh` — Roda `alembic upgrade head` se `DATABASE_URL` definido, depois sobe uvicorn
 - `frontend/Dockerfile` — Multi-stage build (node:22-alpine + nginx:alpine): build com `npm ci` + `npm run build`, serve com nginx
-- `frontend/nginx.conf.template` — Template nginx com `$BACKEND_URL` (envsubst): proxy `/ws`, `/auth`, `/chat`, `/admin/(users|config|logs)` para backend, SPA fallback para React Router
+- `frontend/nginx.conf.template` — Template nginx com `$BACKEND_URL` (envsubst): proxy `/ws`, `/auth`, `/chat`, `/admin/(users|config|logs|agent-runs)` para backend, SPA fallback para React Router
 - `.dockerignore` — Exclui .venv, node_modules, .env, .git, *.db, caches
 
 Nginx distingue rotas frontend (SPA) vs backend (API):

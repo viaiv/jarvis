@@ -86,3 +86,24 @@ class ThreadSummary(BaseModel):
 class ThreadListResponse(BaseModel):
     threads: list[ThreadSummary]
     total: int
+
+
+# --- Agent Runs ---
+
+class AgentRunResponse(BaseModel):
+    id: int
+    repo: str
+    issue_number: int
+    issue_title: str
+    action: str
+    category: str | None = None
+    status: str
+    tool_steps: int
+    error_message: str | None = None
+    started_at: str
+    finished_at: str | None = None
+
+
+class AgentRunListResponse(BaseModel):
+    runs: list[AgentRunResponse]
+    total: int
