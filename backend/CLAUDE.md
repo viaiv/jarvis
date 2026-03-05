@@ -10,7 +10,10 @@ Pacote Python instalável com o assistente conversacional.
 - `graph_cache.py` — LRU cache de grafos compilados: `get_or_build_graph()`, `cache_info()`, `cache_clear()`
 - `chat.py` — `invoke_chat()` e `stream_chat()` (retorna eventos tipados: token/tool_start/tool_end)
 - `chat_once.py` — Entrypoint legado, redireciona para `cli.main()`
-- `tools.py` — Ferramentas: `calculator`, `current_time` + `CARTOLA_TOOLS` registradas em `ALL_TOOLS`
+- `tools/` — Pacote de ferramentas:
+  - `base.py` — Ferramentas basicas: `calculator`, `current_time`, exporta `BASE_TOOLS`
+  - `github.py` — 8 ferramentas GitHub (PyGithub): read_issue, read_file, list_files, comment_issue, create_branch, create_or_update_file, create_pr, add_label. Exporta `GITHUB_TOOLS`. Dependencia opcional via `pip install -e './backend[github]'`
+  - `__init__.py` — Agrega `BASE_TOOLS` + `CARTOLA_TOOLS` + `GITHUB_TOOLS` em `ALL_TOOLS`
 - `cartola/` — Subpacote Cartola FC:
   - `client.py` — HTTP client (`urllib.request`), constantes `POSICAO_MAP`, `STATUS_MAP`, cache Redis opcional
   - `tools.py` — 5 `@tool` functions: market_status, players, round_scores, matches, expert_tips
@@ -55,3 +58,4 @@ Pacote Python instalável com o assistente conversacional.
 - `python-dotenv` — Leitura do `.env`
 - `alembic` — Migrations de schema do banco auth
 - `fastapi` + `uvicorn` — API REST
+- `PyGithub` — Cliente GitHub API (opcional, via `pip install -e './backend[github]'`)

@@ -76,6 +76,4 @@ def current_time(timezone_name: str = "UTC") -> str:
     return datetime.now(tz).isoformat()
 
 
-from .cartola import CARTOLA_TOOLS
-
-ALL_TOOLS = [calculator, current_time, *CARTOLA_TOOLS]
+BASE_TOOLS = [calculator, current_time]

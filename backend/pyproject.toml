@@ -34,6 +34,7 @@ jarvis-api = "jarvis.api:main"
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "pytest-asyncio>=0.24", "httpx>=0.28.0"]
 cartola = ["firecrawl-py>=1.0.0"]
+github = ["PyGithub>=2.1.0"]
 vector = ["openai>=1.0.0"]
 
 [tool.pytest.ini_options]

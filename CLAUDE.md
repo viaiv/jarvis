@@ -19,6 +19,7 @@ Projeto educacional para aprender tool calling, grafos de agentes e memória per
 
 Mapa de diretórios:
 - `backend/src/jarvis/` — Código principal do assistente (Python/FastAPI)
+- `backend/src/jarvis/tools/` — Pacote de ferramentas (base, GitHub, Cartola FC)
 - `backend/src/jarvis/cartola/` — Ferramentas do Cartola FC (client HTTP, tools, scraper)
 - `backend/tests/` — Testes unitários
 - `frontend/` — Interface web (React + Vite + TypeScript)
@@ -124,13 +125,35 @@ Subpacote `backend/src/jarvis/cartola/` com 5 ferramentas para o Cartola FC:
 
 Arquitetura:
 - `client.py`: HTTP client usando `urllib.request` (sem dependencia extra), constantes de mapeamento, cache Redis opcional via `cached_get()`
-- `tools.py`: 5 `@tool` functions registradas em `CARTOLA_TOOLS`, importadas por `tools.py` → `ALL_TOOLS`
+- `tools.py`: 5 `@tool` functions registradas em `CARTOLA_TOOLS`, importadas por `tools/__init__.py` → `ALL_TOOLS`
 - `scraper.py`: Import lazy de `firecrawl-py`, `FIRECRAWL_API_KEY` via `os.getenv`
 - `cache.py`: Wrapper Redis com `get_redis()` e `cached_get(key, ttl, fetch_fn)` — fallback sem Redis
 - API publica: `api.cartola.globo.com` (sem autenticacao)
 - Cache Redis: market_status=5min, players=10min, scored=5min, matches=30min
 - Zero mudanca no grafo/chat/api — integracao via `ALL_TOOLS`
 - System prompt (`DEFAULT_SYSTEM_PROMPT`) instrui o LLM a usar ferramentas cartola_* proativamente e guia montagem de escalacoes passo a passo
+
+## GitHub Tools
+
+Modulo `backend/src/jarvis/tools/github.py` com 8 ferramentas para interagir com repositorios GitHub via PyGithub:
+
+- `github_read_issue` — Le titulo, corpo e labels de uma issue
+- `github_read_file` — Le conteudo de um arquivo do repositorio (trunca em 15k chars)
+- `github_list_files` — Lista arquivos e diretorios de um caminho
+- `github_comment_issue` — Comenta em uma issue
+- `github_create_branch` — Cria branch a partir de outra
+- `github_create_or_update_file` — Cria ou atualiza arquivo com commit
+- `github_create_pr` — Abre PR como draft
+- `github_add_label` — Adiciona label a uma issue/PR
+
+Arquitetura:
+- `tools/github.py`: 8 `@tool` functions, cliente PyGithub via `_get_client()` com lazy init
+- `tools/base.py`: tools basicas (calculator, current_time) extraidas do antigo `tools.py`
+- `tools/__init__.py`: agrega `BASE_TOOLS` + `CARTOLA_TOOLS` + `GITHUB_TOOLS` em `ALL_TOOLS`
+- Dependencia opcional: `pip install -e './backend[github]'` (PyGithub)
+- Env var: `GITHUB_TOKEN` (Personal Access Token com permissoes de repo)
+- Validacao de inputs dentro das tools, retorna mensagem de erro amigavel
+- Zero mudanca no grafo/chat/api — integracao via `ALL_TOOLS`
 
 ## Startup (run.py)
 
