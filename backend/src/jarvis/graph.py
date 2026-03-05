@@ -111,9 +111,11 @@ def build_graph(
     system_prompt: str,
     history_window: int,
     checkpointer=None,
+    tools=None,
 ):
-    model = ChatOpenAI(model=model_name, temperature=0, streaming=True).bind_tools(ALL_TOOLS)
-    tool_node = ToolNode(ALL_TOOLS)
+    active_tools = tools if tools is not None else ALL_TOOLS
+    model = ChatOpenAI(model=model_name, temperature=0, streaming=True).bind_tools(active_tools)
+    tool_node = ToolNode(active_tools)
 
     async def assistant_node(state: GraphState) -> dict:
         trimmed = _trim_and_prepend_system(

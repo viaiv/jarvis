@@ -22,6 +22,7 @@ from .db_factory import create_auth_db, get_db_module
 from .deps import get_current_active_user
 from .graph import build_graph
 from .schemas import LoginRequest, MeResponse, RefreshRequest, TokenResponse
+from .tools import ALL_TOOLS
 
 
 class ChatRequest(BaseModel):
@@ -56,11 +57,17 @@ async def lifespan(app: FastAPI):
 
     # Checkpointer (SQLite ou PostgreSQL)
     async with create_checkpointer(settings) as checkpointer:
+        # Filtrar tools desabilitadas via config global
+        global_config = await db_mod.get_global_config(auth_conn)
+        disabled = global_config.get("disabled_tools", [])
+        enabled_tools = [t for t in ALL_TOOLS if t.name not in disabled]
+
         graph = build_graph(
             model_name=settings.model_name,
             system_prompt=settings.system_prompt,
             history_window=settings.history_window,
             checkpointer=checkpointer,
+            tools=enabled_tools,
         )
         app.state.graph = graph
         app.state.settings = settings

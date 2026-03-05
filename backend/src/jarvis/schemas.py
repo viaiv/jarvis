@@ -107,3 +107,19 @@ class AgentRunResponse(BaseModel):
 class AgentRunListResponse(BaseModel):
     runs: list[AgentRunResponse]
     total: int
+
+
+# --- Tools ---
+
+class ToolInfo(BaseModel):
+    name: str
+    description: str
+    enabled: bool
+
+
+class ToolsResponse(BaseModel):
+    tools: list[ToolInfo]
+
+
+class ToolsUpdate(BaseModel):
+    disabled_tools: list[str]
