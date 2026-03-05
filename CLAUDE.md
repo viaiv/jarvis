@@ -61,6 +61,8 @@ cp backend/.env.example .env       # configurar OPENAI_API_KEY
 
 ## Arquitetura do Grafo (LangGraph)
 
+### Grafo Conversacional (Chat)
+
 Fluxo: `START → assistant → [tools → assistant]* → END`
 - O nó `assistant` chama o LLM com system prompt + histórico trimado
 - Se há `tool_calls` na resposta e não atingiu `max_tool_steps`, vai para `tools`
@@ -68,6 +70,15 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - Sem `tool_calls` → encerra
 - `_sanitize_tool_sequences` valida consistência de tool calls no histórico antes de enviar ao modelo
 - `_trim_and_prepend_system` conta turnos humanos (HumanMessage) para trimming — preserva blocos completos de tool calls dentro de cada turno
+
+### Grafo GitHub Agent
+
+Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
+- O nó `classifier` classifica a issue (BUG, FEATURE, DOCS, QUESTION, SECURITY) via LLM e injeta contexto no historico
+- O nó `assistant` usa apenas `GITHUB_TOOLS` (8 tools via PyGithub)
+- `GitHubGraphState` extende o state com campos de issue: `issue_title`, `issue_body`, `issue_number`, `repo`, `issue_category`
+- `build_github_graph()` constroi o grafo completo com classificador como entry point
+- Classificador em `nodes/classifier.py`: prompt estruturado, fallback para QUESTION se resposta invalida
 
 ## Streaming e Protocolo WebSocket
 

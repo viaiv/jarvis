@@ -6,7 +6,7 @@ Pacote Python instalável com o assistente conversacional.
 
 - `cli.py` — Entry point (`jarvis-chat`), parsing de args, loop interativo com Rich
 - `config.py` — `Settings` dataclass com campos auth/JWT/infra, leitura de `.env`, overrides de CLI, system prompt com instrucoes Cartola FC
-- `graph.py` — `build_graph()`, `_trim_and_prepend_system()` (trim por turnos humanos), `_sanitize_tool_sequences()`
+- `graph.py` — `build_graph()` (chat), `build_github_graph()` (agente GitHub com classificador), `_trim_and_prepend_system()`, `_sanitize_tool_sequences()`
 - `graph_cache.py` — LRU cache de grafos compilados: `get_or_build_graph()`, `cache_info()`, `cache_clear()`
 - `chat.py` — `invoke_chat()` e `stream_chat()` (retorna eventos tipados: token/tool_start/tool_end)
 - `chat_once.py` — Entrypoint legado, redireciona para `cli.main()`
@@ -18,6 +18,9 @@ Pacote Python instalável com o assistente conversacional.
   - `client.py` — HTTP client (`urllib.request`), constantes `POSICAO_MAP`, `STATUS_MAP`, cache Redis opcional
   - `tools.py` — 5 `@tool` functions: market_status, players, round_scores, matches, expert_tips
   - `scraper.py` — Firecrawl scraper (import lazy, dependencia opcional via `pip install -e './backend[cartola]'`)
+- `nodes/` — Nos do grafo GitHub Agent:
+  - `classifier.py` — Classificador de issues via LLM (BUG, FEATURE, DOCS, QUESTION, SECURITY), prompt estruturado, fallback para QUESTION
+  - `__init__.py` — Exporta `classify_issue`, `ISSUE_CATEGORIES`
 - `api.py` — Entry point da API REST (`jarvis-api`), endpoints HTTP + WS + auth, porta via `JARVIS_PORT` env var (default 8000)
 - `auth.py` — Hash bcrypt, JWT encode/decode, `TokenPayload` dataclass
 - `db.py` — Banco auth SQLite (aiosqlite): CRUD users, config global/por usuario, `seed_admin_if_needed()`

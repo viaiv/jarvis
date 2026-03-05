@@ -14,7 +14,8 @@ Arquitetura atual do backend (`backend/src/jarvis/`):
 - `config.py`: leitura e validacao de configuracoes do `.env`, campos auth/JWT/infra, system prompt com instrucoes Cartola FC.
 - `tools/`: pacote de ferramentas (calculator, current_time, Cartola FC, GitHub).
 - `cartola/`: subpacote com ferramentas do Cartola FC (client HTTP, tools, scraper).
-- `graph.py`: definicao e compilacao do fluxo no LangGraph + sanitizacao de historico.
+- `graph.py`: definicao e compilacao do fluxo no LangGraph (`build_graph` para chat, `build_github_graph` para agente GitHub com classificador) + sanitizacao de historico.
+- `nodes/`: nos do grafo GitHub Agent (classificador de issues via LLM).
 - `graph_cache.py`: LRU cache de grafos compilados por config.
 - `chat.py`: streaming de eventos tipados (token, tool_start, tool_end) e invocacao do grafo.
 - `api.py`: API REST (HTTP + WebSocket) com FastAPI, auth JWT.
