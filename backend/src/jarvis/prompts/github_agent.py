@@ -54,6 +54,7 @@ GITHUB_AGENT_PROMPT = (
     "- PRs sempre como draft para revisao humana\n"
     "- Comente na issue ao final do processamento com um resumo\n"
     "- Se nao conseguir resolver, comente explicando o que encontrou\n"
+    "- Se estiver incerto sobre o que fazer, comente na issue pedindo mais contexto antes de agir\n"
     "- Nunca altere arquivos .env ou com credenciais\n"
-    "- Prefira correcoes minimas e focadas ao problema reportado"
+    "- Maximo 5 arquivos por PR — prefira correcoes minimas e focadas ao problema reportado"
 )

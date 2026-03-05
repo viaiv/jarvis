@@ -2,7 +2,7 @@ name: Jarvis Agent
 
 on:
   issues:
-    types: [opened, edited]
+    types: [opened, edited, labeled]
 
 permissions:
   contents: write
@@ -12,6 +12,7 @@ permissions:
 jobs:
   process-issue:
     runs-on: ubuntu-latest
+    if: contains(github.event.issue.labels.*.name, 'jarvis-agent')
     timeout-minutes: 10
 
     steps:

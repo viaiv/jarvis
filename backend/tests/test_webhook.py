@@ -46,14 +46,21 @@ class TestVerifySignature:
         assert verify_signature(b"tampered", sig, secret) is False
 
 
-def _issue_payload(action: str = "opened", number: int = 42) -> dict:
+def _issue_payload(
+    action: str = "opened",
+    number: int = 42,
+    labels: list[str] | None = None,
+) -> dict:
     """Cria payload de evento issues do GitHub."""
+    if labels is None:
+        labels = ["jarvis-agent"]
     return {
         "action": action,
         "issue": {
             "number": number,
             "title": "Bug no login",
             "body": "O login falha com senha correta",
+            "labels": [{"name": lbl} for lbl in labels],
         },
         "repository": {
             "full_name": "viaiv/jarvis",
@@ -237,3 +244,78 @@ class TestWebhookEndpoint:
 
         assert resp.status_code == 200
         assert resp.json()["status"] == "accepted"
+
+    @pytest.mark.asyncio
+    @patch("jarvis.webhook._handle_issue_event")
+    async def test_issue_without_label_ignored(self, mock_handle, app):
+        """Issues sem label jarvis-agent sao ignoradas."""
+        payload_dict = _issue_payload("opened", labels=["bug"])
+        payload = json.dumps(payload_dict).encode()
+        sig = _make_signature(payload, "test-secret")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/webhook/github",
+                content=payload,
+                headers={
+                    "X-GitHub-Event": "issues",
+                    "X-Hub-Signature-256": sig,
+                    "Content-Type": "application/json",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ignored"
+        assert "jarvis-agent" in resp.json()["reason"]
+        mock_handle.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("jarvis.webhook._handle_issue_event")
+    async def test_issue_labeled_action_accepted(self, mock_handle, app):
+        """Acao 'labeled' e aceita quando issue tem label jarvis-agent."""
+        payload_dict = _issue_payload("labeled")
+        payload = json.dumps(payload_dict).encode()
+        sig = _make_signature(payload, "test-secret")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/webhook/github",
+                content=payload,
+                headers={
+                    "X-GitHub-Event": "issues",
+                    "X-Hub-Signature-256": sig,
+                    "Content-Type": "application/json",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "accepted"
+
+    @pytest.mark.asyncio
+    @patch("jarvis.webhook._handle_issue_event")
+    async def test_issue_no_labels_ignored(self, mock_handle, app):
+        """Issues sem nenhuma label sao ignoradas."""
+        payload_dict = _issue_payload("opened", labels=[])
+        payload = json.dumps(payload_dict).encode()
+        sig = _make_signature(payload, "test-secret")
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            resp = await client.post(
+                "/webhook/github",
+                content=payload,
+                headers={
+                    "X-GitHub-Event": "issues",
+                    "X-Hub-Signature-256": sig,
+                    "Content-Type": "application/json",
+                },
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ignored"
+        mock_handle.assert_not_called()

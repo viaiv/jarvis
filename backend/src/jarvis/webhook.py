@@ -132,7 +132,7 @@ async def github_webhook(
         return {"status": "ignored", "reason": f"evento '{event_type}' nao processado"}
 
     action = payload.get("action", "")
-    if action not in ("opened", "edited"):
+    if action not in ("opened", "edited", "labeled"):
         return {"status": "ignored", "reason": f"acao '{action}' nao processada"}
 
     issue = payload.get("issue", {})
@@ -144,6 +144,11 @@ async def github_webhook(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Payload incompleto: issue ou repository ausente.",
         )
+
+    # Filtrar por label jarvis-agent
+    labels = [lbl.get("name", "") for lbl in issue.get("labels", [])]
+    if "jarvis-agent" not in labels:
+        return {"status": "ignored", "reason": "issue sem label 'jarvis-agent'"}
 
     # Disparar processamento em background
     background_tasks.add_task(

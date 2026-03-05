@@ -87,14 +87,16 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 
 - `POST /webhook/github` — Recebe webhooks do GitHub (eventos de issues)
 - Validacao HMAC-SHA256 via `GITHUB_WEBHOOK_SECRET` (opcional, se nao configurado aceita tudo)
-- Filtra apenas eventos `issues` com acoes `opened` e `edited`
+- Filtra apenas eventos `issues` com acoes `opened`, `edited` e `labeled`
+- So processa issues com label `jarvis-agent` (ignora as demais)
 - Processa em background via FastAPI `BackgroundTasks` — responde 200 imediatamente
 - Evento `ping` retorna `{"status": "pong"}` (usado pelo GitHub ao configurar webhook)
 
 ### GitHub Actions
 
 - Workflow `.github/workflows/jarvis-agent.yml` — alternativa ao webhook para processar issues
-- Trigger: `issues: [opened, edited]`
+- Trigger: `issues: [opened, edited, labeled]`
+- Condicao: `if: contains(github.event.issue.labels.*.name, 'jarvis-agent')` — so executa com label
 - Permissions: `contents: write`, `issues: write`, `pull-requests: write`
 - Executa inline Python que le `GITHUB_EVENT_PATH`, constroi o grafo GitHub e invoca com dados da issue
 - Usa `GITHUB_AGENT_PROMPT` como system prompt (mesmo prompt do webhook)
