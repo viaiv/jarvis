@@ -21,6 +21,7 @@ from .config import load_settings
 from .db_factory import create_auth_db, get_db_module
 from .deps import get_current_active_user
 from .graph import build_graph
+from .logs import get_thread_messages, list_threads
 from .schemas import LoginRequest, MeResponse, RefreshRequest, TokenResponse
 from .tools import ALL_TOOLS
 
@@ -183,6 +184,48 @@ async def me(user: dict = Depends(get_current_active_user)):
 
 
 # --- Chat endpoints (protegidos) ---
+
+
+@app.get("/chat/threads")
+async def list_user_threads(
+    user: dict = Depends(get_current_active_user),
+):
+    """Lista threads do usuario autenticado."""
+    settings = app.state.settings
+    threads, total = await list_threads(
+        settings, user_id=user["id"], limit=100, offset=0,
+    )
+
+    # Para cada thread, extrair preview (primeira mensagem humana)
+    checkpointer = app.state.checkpointer
+    result = []
+    for t in threads:
+        preview = ""
+        messages = await get_thread_messages(checkpointer, t["thread_id"])
+        for msg in messages:
+            if msg.get("role") == "user":
+                preview = msg.get("content", "")[:100]
+                break
+        result.append({
+            "thread_id": t["thread_name"],
+            "preview": preview,
+            "message_count": len([m for m in messages if m.get("role") in ("user", "assistant")]),
+        })
+
+    return {"threads": result, "total": total}
+
+
+@app.get("/chat/threads/{thread_id}")
+async def get_user_thread_messages(
+    thread_id: str,
+    user: dict = Depends(get_current_active_user),
+):
+    """Retorna mensagens de um thread do usuario."""
+    full_thread_id = f"{user['id']}:{thread_id}"
+    checkpointer = app.state.checkpointer
+    messages = await get_thread_messages(checkpointer, full_thread_id)
+    return {"thread_id": thread_id, "messages": messages}
+
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(

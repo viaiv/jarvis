@@ -127,6 +127,7 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - Senhas com bcrypt (hash direto, sem passlib)
 - PyJWT: `sub` claim e string (`str(user_id)` / `int(data["sub"])`)
 - Endpoints: `POST /auth/login`, `POST /auth/refresh`, `GET /auth/me`
+- Thread endpoints: `GET /chat/threads` (lista threads do usuario), `GET /chat/threads/{thread_id}` (mensagens de um thread)
 - WebSocket auth via query param `?token=<jwt>`
 - Thread namespace: `thread_id = f"{user_id}:{provided_thread}"` — isola conversas por usuario
 - Registro apenas via admin (sem self-registration)
@@ -148,6 +149,18 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - Layout com sidebar (Usuarios, Logs, Agent, Ferramentas, Config) + link para voltar ao chat
 - `adminApi.ts`: client tipado para todos os endpoints admin
 - Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `AgentRunsPage` (monitoramento de execucoes do agente GitHub), `ToolsPage` (toggle on/off por ferramenta), `ConfigPage` (editor global/por usuario)
+
+## Sidebar de Historico
+
+- Sidebar recolhivel no chat principal — abre pelo botao hamburger no header
+- Lista todas as conversas do usuario autenticado via `GET /chat/threads`
+- Cada item mostra preview (primeiros 100 chars da primeira mensagem) e contagem de mensagens
+- Clicar em um thread carrega suas mensagens no chat via `GET /chat/threads/{id}`
+- Botao "Nova conversa" cria thread com UUID novo e limpa o chat
+- `useChat` hook expoe `threadId`, `loadThread(id)` e `newThread()` para troca de threads
+- Overlay escuro em mobile ao abrir sidebar, fecha com click fora
+- `chatApi.ts`: client tipado para endpoints de threads do usuario
+- `components/Sidebar.tsx`: componente da sidebar com lista de threads
 
 ## Cartola FC Tools
 
