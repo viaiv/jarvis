@@ -80,6 +80,14 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - `build_github_graph()` constroi o grafo completo com classificador como entry point
 - Classificador em `nodes/classifier.py`: prompt estruturado, fallback para QUESTION se resposta invalida
 
+### Webhook GitHub
+
+- `POST /webhook/github` — Recebe webhooks do GitHub (eventos de issues)
+- Validacao HMAC-SHA256 via `GITHUB_WEBHOOK_SECRET` (opcional, se nao configurado aceita tudo)
+- Filtra apenas eventos `issues` com acoes `opened` e `edited`
+- Processa em background via FastAPI `BackgroundTasks` — responde 200 imediatamente
+- Evento `ping` retorna `{"status": "pong"}` (usado pelo GitHub ao configurar webhook)
+
 ## Streaming e Protocolo WebSocket
 
 `stream_chat()` retorna `AsyncGenerator[dict, None]` com eventos tipados:

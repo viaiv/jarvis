@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .admin import router as admin_router
+from .webhook import router as webhook_router
 from .auth import (
     create_access_token,
     create_refresh_token,
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 app.include_router(admin_router)
+app.include_router(webhook_router)
 
 app.add_middleware(
     CORSMiddleware,

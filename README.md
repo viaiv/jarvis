@@ -18,6 +18,7 @@ Arquitetura atual do backend (`backend/src/jarvis/`):
 - `nodes/`: nos do grafo GitHub Agent (classificador de issues via LLM).
 - `graph_cache.py`: LRU cache de grafos compilados por config.
 - `chat.py`: streaming de eventos tipados (token, tool_start, tool_end) e invocacao do grafo.
+- `webhook.py`: webhook GitHub (`POST /webhook/github`) com validacao HMAC-SHA256 e processamento em background.
 - `api.py`: API REST (HTTP + WebSocket) com FastAPI, auth JWT.
 - `auth.py`: hash bcrypt, JWT encode/decode.
 - `db.py`: banco auth SQLite (aiosqlite) com CRUD users e config.
