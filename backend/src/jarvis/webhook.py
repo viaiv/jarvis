@@ -52,11 +52,16 @@ async def _handle_issue_event(
     issue: dict,
     repo_full_name: str,
     settings: Settings,
+    db_module: object | None = None,
+    auth_db: object | None = None,
 ) -> None:
     """Processa evento de issue em background.
 
     Constroi o grafo GitHub, executa classificacao e resposta autonoma.
+    Registra execucao na tabela agent_runs quando db_module e auth_db disponiveis.
     """
+    from datetime import datetime, timezone
+
     issue_number = issue.get("number", 0)
     title = issue.get("title", "")
     body = issue.get("body") or ""
@@ -65,6 +70,17 @@ async def _handle_issue_event(
         "Processando issue #%d (%s) em %s — acao: %s",
         issue_number, title, repo_full_name, action,
     )
+
+    # Registrar inicio da execucao
+    run_id = None
+    if db_module and auth_db:
+        try:
+            run = await db_module.create_agent_run(
+                auth_db, repo_full_name, issue_number, title, action,
+            )
+            run_id = run["id"]
+        except Exception:
+            logger.exception("Erro ao registrar agent run")
 
     try:
         graph = build_github_graph(
@@ -87,13 +103,40 @@ async def _handle_issue_event(
         result = await graph.ainvoke(initial_state)
 
         category = result.get("issue_category", "QUESTION")
+        tool_steps = result.get("tool_steps", 0)
         logger.info(
             "Issue #%d classificada como %s — %d tool steps executados",
-            issue_number, category, result.get("tool_steps", 0),
+            issue_number, category, tool_steps,
         )
+
+        # Registrar conclusao
+        if run_id and db_module and auth_db:
+            try:
+                await db_module.update_agent_run(
+                    auth_db, run_id,
+                    category=category,
+                    status="completed",
+                    tool_steps=tool_steps,
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+            except Exception:
+                logger.exception("Erro ao atualizar agent run #%d", run_id)
 
     except Exception:
         logger.exception("Erro ao processar issue #%d em %s", issue_number, repo_full_name)
+
+        # Registrar falha
+        if run_id and db_module and auth_db:
+            try:
+                import traceback
+                await db_module.update_agent_run(
+                    auth_db, run_id,
+                    status="failed",
+                    error_message=traceback.format_exc()[-500:],
+                    finished_at=datetime.now(timezone.utc).isoformat(),
+                )
+            except Exception:
+                logger.exception("Erro ao atualizar agent run #%d", run_id)
 
 
 @router.post("/github")
@@ -150,6 +193,10 @@ async def github_webhook(
     if "jarvis-agent" not in labels:
         return {"status": "ignored", "reason": "issue sem label 'jarvis-agent'"}
 
+    # Obter modulo de DB e conexao para registrar agent run
+    db_module = getattr(request.app.state, "db_module", None)
+    auth_db = getattr(request.app.state, "auth_db", None)
+
     # Disparar processamento em background
     background_tasks.add_task(
         _handle_issue_event,
@@ -157,6 +204,8 @@ async def github_webhook(
         issue=issue,
         repo_full_name=repo_full_name,
         settings=settings,
+        db_module=db_module,
+        auth_db=auth_db,
     )
 
     return {

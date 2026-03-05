@@ -24,21 +24,22 @@ Pacote Python instalável com o assistente conversacional.
 - `prompts/` — System prompts especializados:
   - `github_agent.py` — `GITHUB_AGENT_PROMPT`: instrucoes por categoria (BUG→fix/, FEATURE→feat/, DOCS→docs/, QUESTION→resposta, SECURITY→security/), regras gerais (draft PRs, codigo limpo, sem .env)
   - `__init__.py` — Exporta `GITHUB_AGENT_PROMPT`
-- `webhook.py` — Webhook GitHub (`POST /webhook/github`): validacao HMAC-SHA256, filtra issues opened/edited, dispara agente em background via BackgroundTasks
+- `webhook.py` — Webhook GitHub (`POST /webhook/github`): validacao HMAC-SHA256, filtra issues opened/edited, dispara agente em background via BackgroundTasks, registra execucoes na tabela `agent_runs`
 - `api.py` — Entry point da API REST (`jarvis-api`), endpoints HTTP + WS + auth, porta via `JARVIS_PORT` env var (default 8000)
 - `auth.py` — Hash bcrypt, JWT encode/decode, `TokenPayload` dataclass
-- `db.py` — Banco auth SQLite (aiosqlite): CRUD users, config global/por usuario, `seed_admin_if_needed()`
-- `db_postgres.py` — Banco auth PostgreSQL (asyncpg): mesma interface que `db.py`, pool com min=2/max=10
+- `db.py` — Banco auth SQLite (aiosqlite): CRUD users, config global/por usuario, agent runs, `seed_admin_if_needed()`
+- `db_postgres.py` — Banco auth PostgreSQL (asyncpg): mesma interface que `db.py`, pool com min=2/max=10, inclui CRUD agent runs
 - `db_factory.py` — Factory: `create_auth_db()`, `get_db_module()`, `get_integrity_error()` — seleciona SQLite ou PostgreSQL
 - `checkpoint.py` — Factory: `create_checkpointer()` — AsyncSqliteSaver ou AsyncPostgresSaver
 - `cache.py` — Wrapper Redis: `get_redis()`, `cached_get(key, ttl, fetch_fn)` — fallback sem Redis
 - `deps.py` — FastAPI dependencies: `get_current_user()`, `get_current_active_user()`, `get_admin_user()`
-- `admin.py` — APIRouter `/admin`: CRUD usuarios, config, logs de conversa
+- `admin.py` — APIRouter `/admin`: CRUD usuarios, config, logs de conversa, agent runs
 - `logs.py` — Extracao read-only de threads e mensagens do checkpoint (SQLite ou PostgreSQL)
-- `schemas.py` — Pydantic models para auth, admin e logs
+- `schemas.py` — Pydantic models para auth, admin, logs e agent runs
 - `alembic/` — Migrations Alembic:
   - `env.py` — Resolve `DATABASE_URL` ou SQLite, configura SQLAlchemy engine
   - `versions/001_initial_auth_schema.py` — Tabelas `users`, `user_config`, `global_config`
+  - `versions/002_agent_runs.py` — Tabela `agent_runs` para monitoramento de execucoes do agente GitHub
 
 ## Fluxo de Dados
 

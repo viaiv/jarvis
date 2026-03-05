@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS global_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     config_json TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id SERIAL PRIMARY KEY,
+    repo TEXT NOT NULL,
+    issue_number INTEGER NOT NULL,
+    issue_title TEXT NOT NULL,
+    action TEXT NOT NULL,
+    category TEXT,
+    status TEXT NOT NULL DEFAULT 'processing',
+    tool_steps INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT
+);
 """
 
 
@@ -224,6 +238,120 @@ async def set_global_config(
             "UPDATE global_config SET config_json = $1 WHERE id = 1",
             config_json,
         )
+
+
+# --- Agent Runs ---
+
+
+def _record_to_agent_run(record: asyncpg.Record) -> dict[str, Any]:
+    return {
+        "id": record["id"],
+        "repo": record["repo"],
+        "issue_number": record["issue_number"],
+        "issue_title": record["issue_title"],
+        "action": record["action"],
+        "category": record["category"],
+        "status": record["status"],
+        "tool_steps": record["tool_steps"],
+        "error_message": record["error_message"],
+        "started_at": record["started_at"],
+        "finished_at": record["finished_at"],
+    }
+
+
+async def create_agent_run(
+    pool: asyncpg.Pool,
+    repo: str,
+    issue_number: int,
+    issue_title: str,
+    action: str,
+) -> dict[str, Any]:
+    """Cria registro de execucao do agente GitHub."""
+    now = _now_iso()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO agent_runs (repo, issue_number, issue_title, action, status, started_at)
+               VALUES ($1, $2, $3, $4, 'processing', $5)
+               RETURNING id""",
+            repo, issue_number, issue_title, action, now,
+        )
+    return {
+        "id": row["id"],
+        "repo": repo,
+        "issue_number": issue_number,
+        "issue_title": issue_title,
+        "action": action,
+        "category": None,
+        "status": "processing",
+        "tool_steps": 0,
+        "error_message": None,
+        "started_at": now,
+        "finished_at": None,
+    }
+
+
+async def update_agent_run(
+    pool: asyncpg.Pool,
+    run_id: int,
+    **fields: Any,
+) -> dict[str, Any] | None:
+    """Atualiza campos de um agent run."""
+    allowed = {"category", "status", "tool_steps", "error_message", "finished_at"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return await get_agent_run(pool, run_id)
+
+    set_parts = []
+    values = []
+    for i, (k, v) in enumerate(updates.items(), 1):
+        set_parts.append(f"{k} = ${i}")
+        values.append(v)
+
+    values.append(run_id)
+    set_clause = ", ".join(set_parts)
+
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"UPDATE agent_runs SET {set_clause} WHERE id = ${len(values)}",  # noqa: S608
+            *values,
+        )
+    return await get_agent_run(pool, run_id)
+
+
+async def get_agent_run(
+    pool: asyncpg.Pool, run_id: int
+) -> dict[str, Any] | None:
+    """Busca agent run por ID."""
+    async with pool.acquire() as conn:
+        record = await conn.fetchrow("SELECT * FROM agent_runs WHERE id = $1", run_id)
+    return _record_to_agent_run(record) if record else None
+
+
+async def list_agent_runs(
+    pool: asyncpg.Pool,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Lista agent runs com paginacao e filtro opcional por status."""
+    async with pool.acquire() as conn:
+        if status:
+            row = await conn.fetchrow(
+                "SELECT COUNT(*) AS cnt FROM agent_runs WHERE status = $1", status,
+            )
+            total = row["cnt"] if row else 0
+            records = await conn.fetch(
+                "SELECT * FROM agent_runs WHERE status = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
+                status, limit, offset,
+            )
+        else:
+            row = await conn.fetchrow("SELECT COUNT(*) AS cnt FROM agent_runs")
+            total = row["cnt"] if row else 0
+            records = await conn.fetch(
+                "SELECT * FROM agent_runs ORDER BY id DESC LIMIT $1 OFFSET $2",
+                limit, offset,
+            )
+    return [_record_to_agent_run(r) for r in records], total
 
 
 # --- Seed ---

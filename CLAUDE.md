@@ -90,6 +90,7 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - Filtra apenas eventos `issues` com acoes `opened`, `edited` e `labeled`
 - So processa issues com label `jarvis-agent` (ignora as demais)
 - Processa em background via FastAPI `BackgroundTasks` — responde 200 imediatamente
+- Registra cada execucao na tabela `agent_runs` (status: processing → completed/failed, categoria, tool_steps, error_message)
 - Evento `ping` retorna `{"status": "pong"}` (usado pelo GitHub ao configurar webhook)
 
 ### GitHub Actions
@@ -121,7 +122,7 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 ## Autenticacao e Multi-usuario
 
 - JWT stateless com access token (30min) e refresh token (7 dias)
-- Banco auth: SQLite (`.jarvis-auth.db`) ou PostgreSQL (via `DATABASE_URL`) — tabelas: `users`, `global_config`, `user_config`
+- Banco auth: SQLite (`.jarvis-auth.db`) ou PostgreSQL (via `DATABASE_URL`) — tabelas: `users`, `global_config`, `user_config`, `agent_runs`
 - `db_factory.py` seleciona backend automaticamente: `create_auth_db()`, `get_db_module()`, `get_integrity_error()`
 - Senhas com bcrypt (hash direto, sem passlib)
 - PyJWT: `sub` claim e string (`str(user_id)` / `int(data["sub"])`)
@@ -138,13 +139,14 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - Users CRUD: `GET/POST /admin/users`, `GET/PUT/DELETE /admin/users/{id}`, `PUT /admin/users/{id}/password`
 - Config: `GET/PUT /admin/config` (global), `GET/PUT /admin/users/{id}/config` (por usuario)
 - Logs: `GET /admin/logs` (lista threads paginada), `GET /admin/logs/{thread_id}` (mensagens)
+- Agent Runs: `GET /admin/agent-runs` (lista paginada com filtro por status), `GET /admin/agent-runs/{id}` (detalhes)
 - `graph_cache.py`: LRU cache de grafos compilados por (model_name, system_prompt, history_window)
 
 ### Frontend (`/admin/*`)
 - Rota protegida por `AdminRoute` (role=admin)
-- Layout com sidebar (Usuarios, Logs, Config) + link para voltar ao chat
+- Layout com sidebar (Usuarios, Logs, Agent, Config) + link para voltar ao chat
 - `adminApi.ts`: client tipado para todos os endpoints admin
-- Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `ConfigPage` (editor global/por usuario)
+- Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `AgentRunsPage` (monitoramento de execucoes do agente GitHub), `ConfigPage` (editor global/por usuario)
 
 ## Cartola FC Tools
 
@@ -210,6 +212,7 @@ Funcoes utilitarias exportadas: `check_python_version()`, `check_env_file()`, `p
 - Migrations manuais com SQL raw em `backend/alembic/versions/`
 - `env.py` resolve URL dinamicamente: `DATABASE_URL` → `postgresql+psycopg://`, senao `sqlite:///`
 - Migration `001_initial_auth_schema.py`: cria tabelas `users`, `user_config`, `global_config` (detecta dialect para DDL correto)
+- Migration `002_agent_runs.py`: cria tabela `agent_runs` para monitoramento de execucoes do agente GitHub
 - Bancos pre-existentes (criados pelo `CREATE IF NOT EXISTS`): `run.py` detecta e faz `alembic stamp head`
 - SQLite: tabelas continuam sendo criadas em runtime via `db.py` (Alembic e skip)
 - Novas migrations: `cd backend && alembic revision -m "descricao"` e editar manualmente
@@ -222,7 +225,7 @@ Arquivos:
 - `backend/Dockerfile` — Multi-stage build (python:3.12-slim): builder instala pacote, runtime copia site-packages + Alembic config
 - `backend/entrypoint.sh` — Roda `alembic upgrade head` se `DATABASE_URL` definido, depois sobe uvicorn
 - `frontend/Dockerfile` — Multi-stage build (node:22-alpine + nginx:alpine): build com `npm ci` + `npm run build`, serve com nginx
-- `frontend/nginx.conf.template` — Template nginx com `$BACKEND_URL` (envsubst): proxy `/ws`, `/auth`, `/chat`, `/admin/(users|config|logs)` para backend, SPA fallback para React Router
+- `frontend/nginx.conf.template` — Template nginx com `$BACKEND_URL` (envsubst): proxy `/ws`, `/auth`, `/chat`, `/admin/(users|config|logs|agent-runs)` para backend, SPA fallback para React Router
 - `.dockerignore` — Exclui .venv, node_modules, .env, .git, *.db, caches
 
 Nginx distingue rotas frontend (SPA) vs backend (API):

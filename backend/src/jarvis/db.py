@@ -29,6 +29,20 @@ CREATE TABLE IF NOT EXISTS global_config (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     config_json TEXT NOT NULL DEFAULT '{}'
 );
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo TEXT NOT NULL,
+    issue_number INTEGER NOT NULL,
+    issue_title TEXT NOT NULL,
+    action TEXT NOT NULL,
+    category TEXT,
+    status TEXT NOT NULL DEFAULT 'processing',
+    tool_steps INTEGER NOT NULL DEFAULT 0,
+    error_message TEXT,
+    started_at TEXT NOT NULL,
+    finished_at TEXT
+);
 """
 
 
@@ -216,6 +230,115 @@ async def set_global_config(
         (config_json,),
     )
     await conn.commit()
+
+
+# --- Seed ---
+
+# --- Agent Runs ---
+
+
+def _row_to_agent_run(row: aiosqlite.Row) -> dict[str, Any]:
+    return {
+        "id": row[0],
+        "repo": row[1],
+        "issue_number": row[2],
+        "issue_title": row[3],
+        "action": row[4],
+        "category": row[5],
+        "status": row[6],
+        "tool_steps": row[7],
+        "error_message": row[8],
+        "started_at": row[9],
+        "finished_at": row[10],
+    }
+
+
+async def create_agent_run(
+    conn: aiosqlite.Connection,
+    repo: str,
+    issue_number: int,
+    issue_title: str,
+    action: str,
+) -> dict[str, Any]:
+    """Cria registro de execucao do agente GitHub."""
+    now = _now_iso()
+    cursor = await conn.execute(
+        """INSERT INTO agent_runs (repo, issue_number, issue_title, action, status, started_at)
+           VALUES (?, ?, ?, ?, 'processing', ?)""",
+        (repo, issue_number, issue_title, action, now),
+    )
+    await conn.commit()
+    return {
+        "id": cursor.lastrowid,
+        "repo": repo,
+        "issue_number": issue_number,
+        "issue_title": issue_title,
+        "action": action,
+        "category": None,
+        "status": "processing",
+        "tool_steps": 0,
+        "error_message": None,
+        "started_at": now,
+        "finished_at": None,
+    }
+
+
+async def update_agent_run(
+    conn: aiosqlite.Connection,
+    run_id: int,
+    **fields: Any,
+) -> dict[str, Any] | None:
+    """Atualiza campos de um agent run."""
+    allowed = {"category", "status", "tool_steps", "error_message", "finished_at"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return await get_agent_run(conn, run_id)
+
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [run_id]
+
+    await conn.execute(
+        f"UPDATE agent_runs SET {set_clause} WHERE id = ?",  # noqa: S608
+        values,
+    )
+    await conn.commit()
+    return await get_agent_run(conn, run_id)
+
+
+async def get_agent_run(
+    conn: aiosqlite.Connection, run_id: int
+) -> dict[str, Any] | None:
+    """Busca agent run por ID."""
+    cursor = await conn.execute("SELECT * FROM agent_runs WHERE id = ?", (run_id,))
+    row = await cursor.fetchone()
+    return _row_to_agent_run(row) if row else None
+
+
+async def list_agent_runs(
+    conn: aiosqlite.Connection,
+    limit: int = 50,
+    offset: int = 0,
+    status: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Lista agent runs com paginacao e filtro opcional por status."""
+    where = ""
+    params: list[Any] = []
+    if status:
+        where = "WHERE status = ?"
+        params.append(status)
+
+    cursor = await conn.execute(
+        f"SELECT COUNT(*) FROM agent_runs {where}", params,  # noqa: S608
+    )
+    row = await cursor.fetchone()
+    total = row[0] if row else 0
+
+    cursor = await conn.execute(
+        f"SELECT * FROM agent_runs {where} ORDER BY id DESC LIMIT ? OFFSET ?",  # noqa: S608
+        params + [limit, offset],
+    )
+    rows = await cursor.fetchall()
+    return [_row_to_agent_run(r) for r in rows], total
 
 
 # --- Seed ---

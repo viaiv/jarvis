@@ -149,6 +149,7 @@ Acessivel em `/admin` para usuarios com role `admin`.
 
 - **Usuarios**: CRUD completo (criar, editar, desativar, resetar senha).
 - **Logs**: visualizar conversas de qualquer usuario com filtro e paginacao.
+- **Agent Runs**: monitoramento de execucoes do agente GitHub (status, categoria, tool steps, erros).
 - **Config**: editar configuracao global e por usuario (model, system prompt, history window, max tool steps).
 
 Endpoints do backend em `/admin/*`, protegidos por `get_admin_user` dependency.
@@ -311,6 +312,7 @@ O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
 - `src/layouts/AdminLayout.tsx`: layout com sidebar para area admin.
 - `src/pages/admin/UsersPage.tsx`: CRUD de usuarios.
 - `src/pages/admin/LogsPage.tsx`: viewer de conversas.
+- `src/pages/admin/AgentRunsPage.tsx`: monitoramento de execucoes do agente GitHub.
 - `src/pages/admin/ConfigPage.tsx`: editor de config global e por usuario.
 - `src/api/adminApi.ts`: client tipado para endpoints admin.
 

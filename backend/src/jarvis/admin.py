@@ -1,4 +1,4 @@
-"""Router admin para CRUD de usuarios, config e logs."""
+"""Router admin para CRUD de usuarios, config, logs e agent runs."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -6,6 +6,8 @@ from .db_factory import get_integrity_error
 from .deps import get_admin_user
 from .logs import get_thread_messages, list_threads
 from .schemas import (
+    AgentRunListResponse,
+    AgentRunResponse,
     ConfigResponse,
     ConfigUpdate,
     PasswordUpdate,
@@ -217,3 +219,37 @@ async def admin_get_thread_messages(thread_id: str, request: Request):
     checkpointer = _checkpointer(request)
     messages = await get_thread_messages(checkpointer, thread_id)
     return {"thread_id": thread_id, "messages": messages}
+
+
+# --- Agent Runs ---
+
+
+@router.get("/agent-runs", response_model=AgentRunListResponse)
+async def admin_list_agent_runs(
+    request: Request,
+    limit: int = 50,
+    offset: int = 0,
+    status_filter: str | None = None,
+):
+    """Lista execucoes do agente GitHub."""
+    db = _db(request)
+    runs, total = await db.list_agent_runs(
+        _conn(request), limit=limit, offset=offset, status=status_filter,
+    )
+    return AgentRunListResponse(
+        runs=[AgentRunResponse(**r) for r in runs],
+        total=total,
+    )
+
+
+@router.get("/agent-runs/{run_id}", response_model=AgentRunResponse)
+async def admin_get_agent_run(run_id: int, request: Request):
+    """Retorna detalhes de uma execucao do agente."""
+    db = _db(request)
+    run = await db.get_agent_run(_conn(request), run_id)
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent run nao encontrado.",
+        )
+    return AgentRunResponse(**run)

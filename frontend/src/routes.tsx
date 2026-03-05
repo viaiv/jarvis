@@ -7,6 +7,7 @@ import LoginPage from './pages/LoginPage'
 import UsersPage from './pages/admin/UsersPage'
 import LogsPage from './pages/admin/LogsPage'
 import ConfigPage from './pages/admin/ConfigPage'
+import AgentRunsPage from './pages/admin/AgentRunsPage'
 
 export default function AppRoutes() {
   return (
@@ -31,6 +32,7 @@ export default function AppRoutes() {
         <Route index element={<UsersPage />} />
         <Route path="users" element={<UsersPage />} />
         <Route path="logs" element={<LogsPage />} />
+        <Route path="agent-runs" element={<AgentRunsPage />} />
         <Route path="config" element={<ConfigPage />} />
       </Route>
     </Routes>

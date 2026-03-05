@@ -80,3 +80,24 @@ export interface ThreadMessage {
   role: string
   content: string
 }
+
+// --- Agent Runs ---
+
+export interface AgentRun {
+  id: number
+  repo: string
+  issue_number: number
+  issue_title: string
+  action: string
+  category: string | null
+  status: 'processing' | 'completed' | 'failed'
+  tool_steps: number
+  error_message: string | null
+  started_at: string
+  finished_at: string | null
+}
+
+export interface AgentRunListResponse {
+  runs: AgentRun[]
+  total: number
+}

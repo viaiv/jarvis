@@ -62,8 +62,8 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Admin API — proxy para backend (users, config, logs)
-    location ~ ^/admin/(users|config|logs) {
+    # Admin API — proxy para backend (users, config, logs, agent-runs)
+    location ~ ^/admin/(users|config|logs|agent-runs) {
         proxy_pass ${BACKEND_URL};
         proxy_set_header Host $proxy_host;
         proxy_set_header X-Forwarded-Host $host;
