@@ -112,7 +112,7 @@ export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [status, setStatus] = useState<ConnectionStatus>('disconnected')
   const [isStreaming, setIsStreaming] = useState(false)
-  const [threadId, setThreadId] = useState(() => crypto.randomUUID())
+  const [threadId, setThreadId] = useState<string>(() => crypto.randomUUID())
 
   const wsRef = useRef<WebSocket | null>(null)
   const threadIdRef = useRef(threadId)
