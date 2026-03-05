@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom'
 import ReactMarkdown from 'react-markdown'
 import { useAuth } from './auth/AuthContext'
 import { useChat } from './useChat'
+import Sidebar from './components/Sidebar'
 
 function App() {
   const { user, logout } = useAuth()
-  const { messages, status, isStreaming, sendMessage, reconnect } = useChat()
+  const { messages, status, isStreaming, threadId, sendMessage, reconnect, loadThread, newThread } = useChat()
   const [input, setInput] = useState('')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -26,9 +28,28 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-deep font-body text-text-primary">
+      <Sidebar
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+        currentThreadId={threadId}
+        onSelectThread={loadThread}
+        onNewThread={newThread}
+      />
+
       {/* Header */}
       <header className="flex items-center justify-between px-6 h-14 border-b border-border shrink-0">
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-elevated transition-colors duration-200 cursor-pointer"
+            title="Historico"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="15" y2="12" />
+              <line x1="3" y1="18" x2="11" y2="18" />
+            </svg>
+          </button>
           <div className="w-7 h-7 rounded-md bg-accent/10 border border-accent/25 flex items-center justify-center shadow-[0_0_12px_rgba(0,212,255,0.08)]">
             <span className="font-display font-bold text-accent text-xs leading-none">J</span>
           </div>
@@ -128,7 +149,7 @@ function App() {
                               <span className="text-text-secondary font-medium">{tc.name}</span>
                               {tc.output != null && (
                                 <>
-                                  <span className="text-text-muted">→</span>
+                                  <span className="text-text-muted">&rarr;</span>
                                   <span className="text-text-secondary/80">{tc.output}</span>
                                 </>
                               )}

@@ -289,6 +289,16 @@ O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
 - `tool_end`: resultado da ferramenta (atualiza indicador com output e dot verde).
 - `end`: fim da resposta.
 
+### Historico de Conversas
+
+Sidebar recolhivel no chat com historico de todas as conversas do usuario:
+
+- Abre pelo botao hamburger no header.
+- Lista threads com preview da primeira mensagem e contagem de mensagens.
+- Clicar em um thread carrega as mensagens no chat.
+- Botao "Nova conversa" para iniciar thread novo.
+- Dados via `GET /chat/threads` e `GET /chat/threads/{id}`.
+
 ### Design
 
 - Paleta escura com base navy (#050a14) e accent cyan (#00d4ff).
@@ -296,6 +306,7 @@ O frontend conecta ao backend via WebSocket (`/ws`) e recebe eventos tipados:
 - Mensagens do assistente: texto com borda esquerda cyan, sem card de fundo.
 - Tool calls: pills monospace inline com indicador de status (pulsando/concluido).
 - Input: estilo command prompt com prefixo `>` e glow on focus.
+- Sidebar de historico: fundo surface com overlay escuro em mobile, transicao slide.
 - Fontes: Syne (display), Outfit (body), JetBrains Mono (code/tools) via Google Fonts.
 
 ### Arquivos
