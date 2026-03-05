@@ -101,3 +101,15 @@ export interface AgentRunListResponse {
   runs: AgentRun[]
   total: number
 }
+
+// --- Tools ---
+
+export interface ToolInfo {
+  name: string
+  description: string
+  enabled: boolean
+}
+
+export interface ToolsResponse {
+  tools: ToolInfo[]
+}

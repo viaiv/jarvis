@@ -6,6 +6,7 @@ import type {
   ConfigData,
   ThreadListResponse,
   ThreadMessage,
+  ToolsResponse,
   UserCreate,
   UserUpdate,
 } from '../types'
@@ -137,4 +138,20 @@ export async function listAgentRuns(
 export async function getAgentRun(id: number): Promise<AgentRun> {
   const resp = await authFetch(`${BASE}/agent-runs/${id}`)
   return json<AgentRun>(resp)
+}
+
+// --- Tools ---
+
+export async function listTools(): Promise<ToolsResponse> {
+  const resp = await authFetch(`${BASE}/tools`)
+  return json<ToolsResponse>(resp)
+}
+
+export async function updateTools(disabledTools: string[]): Promise<ToolsResponse> {
+  const resp = await authFetch(`${BASE}/tools`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ disabled_tools: disabledTools }),
+  })
+  return json<ToolsResponse>(resp)
 }

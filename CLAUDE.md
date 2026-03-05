@@ -1,7 +1,6 @@
 # Jarvis
 
-Assistente conversacional de estudo construído com LangChain + LangGraph.
-Projeto educacional para aprender tool calling, grafos de agentes e memória persistente.
+Assistente pessoal conversacional construido com LangChain + LangGraph.
 
 ## Stack e Arquitetura
 
@@ -70,6 +69,7 @@ Fluxo: `START → assistant → [tools → assistant]* → END`
 - Se há `tool_calls` na resposta e não atingiu `max_tool_steps`, vai para `tools`
 - O nó `tools` executa as ferramentas e incrementa o contador
 - Sem `tool_calls` → encerra
+- `build_graph()` aceita parametro `tools` opcional — quando omitido usa `ALL_TOOLS`, quando fornecido usa apenas as tools passadas (usado para filtrar tools desabilitadas via admin)
 - `_sanitize_tool_sequences` valida consistência de tool calls no histórico antes de enviar ao modelo
 - `_trim_and_prepend_system` conta turnos humanos (HumanMessage) para trimming — preserva blocos completos de tool calls dentro de cada turno
 
@@ -140,13 +140,14 @@ Fluxo: `START → classifier → assistant → [tools → assistant]* → END`
 - Config: `GET/PUT /admin/config` (global), `GET/PUT /admin/users/{id}/config` (por usuario)
 - Logs: `GET /admin/logs` (lista threads paginada), `GET /admin/logs/{thread_id}` (mensagens)
 - Agent Runs: `GET /admin/agent-runs` (lista paginada com filtro por status), `GET /admin/agent-runs/{id}` (detalhes)
+- Tools: `GET /admin/tools` (lista todas as ferramentas com status), `PUT /admin/tools` (atualiza `disabled_tools` e reconstroi grafo em runtime)
 - `graph_cache.py`: LRU cache de grafos compilados por (model_name, system_prompt, history_window)
 
 ### Frontend (`/admin/*`)
 - Rota protegida por `AdminRoute` (role=admin)
-- Layout com sidebar (Usuarios, Logs, Agent, Config) + link para voltar ao chat
+- Layout com sidebar (Usuarios, Logs, Agent, Ferramentas, Config) + link para voltar ao chat
 - `adminApi.ts`: client tipado para todos os endpoints admin
-- Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `AgentRunsPage` (monitoramento de execucoes do agente GitHub), `ConfigPage` (editor global/por usuario)
+- Paginas: `UsersPage` (CRUD tabela), `LogsPage` (viewer de threads), `AgentRunsPage` (monitoramento de execucoes do agente GitHub), `ToolsPage` (toggle on/off por ferramenta), `ConfigPage` (editor global/por usuario)
 
 ## Cartola FC Tools
 
@@ -225,11 +226,11 @@ Arquivos:
 - `backend/Dockerfile` — Multi-stage build (python:3.12-slim): builder instala pacote, runtime copia site-packages + Alembic config
 - `backend/entrypoint.sh` — Roda `alembic upgrade head` se `DATABASE_URL` definido, depois sobe uvicorn
 - `frontend/Dockerfile` — Multi-stage build (node:22-alpine + nginx:alpine): build com `npm ci` + `npm run build`, serve com nginx
-- `frontend/nginx.conf.template` — Template nginx com `$BACKEND_URL` (envsubst): proxy `/ws`, `/auth`, `/chat`, `/admin/(users|config|logs|agent-runs)` para backend, SPA fallback para React Router
+- `frontend/nginx.conf.template` — Template nginx com `$BACKEND_URL` (envsubst): proxy `/ws`, `/auth`, `/chat`, `/admin/(users|config|logs|agent-runs|tools)` para backend, SPA fallback para React Router
 - `.dockerignore` — Exclui .venv, node_modules, .env, .git, *.db, caches
 
 Nginx distingue rotas frontend (SPA) vs backend (API):
-- `/admin/(users|config|logs)` → proxy backend (API endpoints)
+- `/admin/(users|config|logs|agent-runs|tools)` → proxy backend (API endpoints)
 - `/admin` (pagina), `/login`, `/` → try_files (SPA React Router)
 - `/ws` → WebSocket proxy com upgrade
 - `/auth`, `/chat` → proxy backend

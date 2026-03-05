@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 
 DEFAULT_SYSTEM_PROMPT = (
-    "Voce e um assistente tecnico, direto e didatico. "
+    "Voce e um assistente pessoal, direto e versatil. "
     "Use as ferramentas disponiveis quando a pergunta exigir calculos, "
     "data/hora ou informacoes do Cartola FC.\n\n"
     "## Cartola FC\n"

@@ -13,10 +13,14 @@ from .schemas import (
     PasswordUpdate,
     ThreadListResponse,
     ThreadSummary,
+    ToolInfo,
+    ToolsResponse,
+    ToolsUpdate,
     UserCreate,
     UserResponse,
     UserUpdate,
 )
+from .tools import ALL_TOOLS
 
 router = APIRouter(prefix="/admin", dependencies=[Depends(get_admin_user)])
 
@@ -253,3 +257,68 @@ async def admin_get_agent_run(run_id: int, request: Request):
             detail="Agent run nao encontrado.",
         )
     return AgentRunResponse(**run)
+
+
+# --- Tools ---
+
+
+@router.get("/tools", response_model=ToolsResponse)
+async def admin_list_tools(request: Request):
+    """Lista todas as ferramentas com status habilitado/desabilitado."""
+    db = _db(request)
+    config = await db.get_global_config(_conn(request))
+    disabled = config.get("disabled_tools", [])
+
+    tools = [
+        ToolInfo(
+            name=t.name,
+            description=t.description,
+            enabled=t.name not in disabled,
+        )
+        for t in ALL_TOOLS
+    ]
+    return ToolsResponse(tools=tools)
+
+
+@router.put("/tools", response_model=ToolsResponse)
+async def admin_update_tools(body: ToolsUpdate, request: Request):
+    """Atualiza lista de ferramentas desabilitadas."""
+    db = _db(request)
+    conn = _conn(request)
+
+    # Validar que todos os nomes existem
+    valid_names = {t.name for t in ALL_TOOLS}
+    invalid = [n for n in body.disabled_tools if n not in valid_names]
+    if invalid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ferramentas desconhecidas: {', '.join(invalid)}",
+        )
+
+    await db.set_global_config(conn, {"disabled_tools": body.disabled_tools})
+
+    # Rebuild graph com tools atualizadas
+    from .graph import build_graph
+    settings = request.app.state.settings
+    config = await db.get_global_config(conn)
+    disabled = config.get("disabled_tools", [])
+    enabled_tools = [t for t in ALL_TOOLS if t.name not in disabled]
+
+    graph = build_graph(
+        model_name=config.get("model_name") or settings.model_name,
+        system_prompt=config.get("system_prompt") or settings.system_prompt,
+        history_window=config.get("history_window") or settings.history_window,
+        checkpointer=request.app.state.checkpointer,
+        tools=enabled_tools,
+    )
+    request.app.state.graph = graph
+
+    tools = [
+        ToolInfo(
+            name=t.name,
+            description=t.description,
+            enabled=t.name not in disabled,
+        )
+        for t in ALL_TOOLS
+    ]
+    return ToolsResponse(tools=tools)
